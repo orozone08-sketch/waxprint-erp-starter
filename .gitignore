@@ -1,0 +1,15 @@
+backend/.venv/
+backend/.env
+backend/waxprint_erp.db
+backend/data/files/*
+!backend/data/files/.gitkeep
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+magics_agent/.env
+__pycache__/
+*.pyc
+.DS_Store
+*.tsbuildinfo
+.tmp/
+*.lnk

@@ -1,0 +1,3 @@
+export type Pnl={period:string;net_sales:number;material_consumed:number;other_direct_cost:number;reshoot_cost:number;direct_production_cost:number;successful_billable_weight_g:number;cost_per_gram:number;gross_profit:number;company_overhead:number;net_operating_profit:number}
+export type Dashboard={counts:{jobs:number;open_reshoots:number;printing:number;qc_failed:number};pnl:Pnl;cash:{customer_outstanding:number;supplier_payable:number};low_stock:{material:string;qty:number;minimum:number}[]}
+export type Job={id:number;number:string;customer:string;customer_id:number;source:string;status:string;priority:string;billable_weight_g:number;reshoot_weight_g:number;received_at:string}
