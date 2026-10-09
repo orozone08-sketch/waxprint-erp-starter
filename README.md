@@ -28,7 +28,7 @@ Copy `.dev.vars.example` to `.dev.vars` and replace the placeholder secrets. Ope
 
 ## Git deployment flow
 
-Work on a feature branch, open a pull request to `main`, and run the GitHub validation workflow. Push/merge to `main` triggers the connected **Cloudflare Workers Builds** pipeline. There is no Cloudflare token stored in GitHub.
+Work on a feature branch, open a pull request to `main`, and run the GitHub validation workflow. After connecting this repository in the Worker's Builds settings, pushes/merges to `main` trigger **Cloudflare Workers Builds**. The GitHub app must be authorized for this repository to complete that connection. There is no Cloudflare token stored in GitHub.
 
 Workers Builds configuration:
 
