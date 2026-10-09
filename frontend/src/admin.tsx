@@ -1,9 +1,8 @@
-import React, {useEffect, useState} from 'react'
+import React from 'react'
 import ReactDOM from 'react-dom/client'
-import {ArrowLeft, ExternalLink, LogOut} from 'lucide-react'
+import {ArrowLeft, ExternalLink} from 'lucide-react'
 import AdminPanel from './pages/AdminPanel'
-import Login from './pages/Login'
-import {clearStoredAuth, getJson, getStoredAuth, logout as logoutSession, setStoredAuth, type AuthSession, type AuthUser} from './api'
+import {PUBLIC_SESSION} from './api'
 import './styles.css'
 
 function goToMain(page:string){
@@ -26,34 +25,7 @@ function openAdminSection(id:string){
 }
 
 function AdminApp(){
- const[auth,setAuth]=useState<AuthSession|null>(()=>getStoredAuth())
- const[checking,setChecking]=useState(()=>Boolean(getStoredAuth()))
-
- useEffect(()=>{
-  const stored=getStoredAuth()
-  if(!stored){setChecking(false);return}
-  getJson<AuthUser>('/api/auth/me').then(user=>{
-   const session={...stored,user}
-   setStoredAuth(session)
-   setAuth(session)
-  }).catch(()=>{
-   clearStoredAuth()
-   setAuth(null)
-  }).finally(()=>setChecking(false))
- },[])
-
- const logout=async()=>{
-  try{await logoutSession()}catch(error){window.alert(`Logout failed: ${String(error)}`);return}
-  setAuth(null)
- }
-
- useEffect(()=>{
-  if(auth&&auth.user.role.toUpperCase()!=='ADMIN')window.location.replace('/?page=inbox')
- },[auth])
-
- if(checking)return <main className="loginPage"><section className="loginPanel">Checking admin login...</section></main>
- if(!auth)return <Login onLogin={setAuth} title="WaxPrint Admin" subtitle="Admin login required" />
-
+ const auth=PUBLIC_SESSION
  const isAdmin=auth.user.role.toUpperCase()==='ADMIN'
  if(!isAdmin)return <main className="loginPage"><section className="loginPanel">Admin access required. Redirecting to ERP...</section></main>
 
@@ -69,7 +41,6 @@ function AdminApp(){
    <div className="adminSideActions">
     <button type="button" onClick={()=>goToMain(isAdmin?'dashboard':'inbox')}><ArrowLeft size={16}/>ERP</button>
     {isAdmin&&<button type="button" onClick={()=>goToMain('settings')}><ExternalLink size={16}/>Settings</button>}
-    <button type="button" onClick={logout}><LogOut size={16}/>Logout</button>
    </div>
   </aside>
   <main className="adminStandalone">
@@ -81,7 +52,6 @@ function AdminApp(){
     <div className="adminStandaloneActions">
      <button type="button" className="secondaryBtn" onClick={()=>goToMain(isAdmin?'dashboard':'inbox')}><ArrowLeft size={16}/>ERP</button>
      {isAdmin&&<button type="button" className="primaryBtn" onClick={()=>goToMain('settings')}><ExternalLink size={16}/>Settings</button>}
-     <button type="button" className="secondaryBtn" onClick={logout}><LogOut size={16}/>Logout</button>
     </div>
    </header>
    <AdminPanel setPage={goToMain}/>

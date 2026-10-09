@@ -1,5 +1,5 @@
 import {ReactNode, useMemo, useState} from 'react'
-import { LayoutDashboard, Inbox, BriefcaseBusiness, Wrench, Layers3, Printer, CircleCheckBig, RefreshCcw, Scale, PackageCheck, Undo2, ReceiptIndianRupee, Boxes, WalletCards, Users, BarChart3, Settings, Search, Bell, ChevronDown, LogOut } from 'lucide-react'
+import { LayoutDashboard, Inbox, BriefcaseBusiness, Wrench, Layers3, Printer, CircleCheckBig, RefreshCcw, Scale, PackageCheck, Undo2, ReceiptIndianRupee, Boxes, WalletCards, Users, BarChart3, Settings, Search, Bell, ChevronDown } from 'lucide-react'
 import {getJson, type AuthUser} from '../api'
 import {canAccessPage, normalizePage, roleHomePage} from '../authz'
 import {Job} from '../types'
@@ -12,7 +12,7 @@ type Customer={id:number;code:string;name:string;email:string|null;whatsapp:stri
 type InboxMessage={id:number;source:string;sender:string|null;subject:string|null;received_at:string;status:string;customer_id:number|null;job_id:number|null}
 type SearchResult={id:string;page:string;kind:string;label:string;meta:string}
 
-export default function Layout({page,setPage,children,user,onLogout}:{page:string;setPage:(p:string)=>void;children:ReactNode;user:AuthUser;onLogout:()=>void}){
+export default function Layout({page,setPage,children,user}:{page:string;setPage:(p:string)=>void;children:ReactNode;user:AuthUser}){
  const[query,setQuery]=useState('')
  const[searchOpen,setSearchOpen]=useState(false)
  const[searchLoaded,setSearchLoaded]=useState(false)
@@ -75,7 +75,6 @@ export default function Layout({page,setPage,children,user,onLogout}:{page:strin
      {isAdmin?
       <a className="userChip" href="/admin.html" aria-label="Open separate admin panel"><strong>{initials}</strong><span>{userName}<small>{pretty(user.role)}</small></span><ChevronDown size={15}/></a>:
       <div className="userChip static" aria-label="Signed in user"><strong>{initials}</strong><span>{userName}<small>{pretty(user.role)}</small></span></div>}
-     <button className="iconBtn" type="button" onClick={onLogout} aria-label="Logout"><LogOut size={18}/></button>
     </div>
    </header>
    {children}

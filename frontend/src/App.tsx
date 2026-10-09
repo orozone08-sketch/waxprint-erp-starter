@@ -18,31 +18,16 @@ import Expenses from './pages/Expenses'
 import Reports from './pages/Reports'
 import SettingsPage from './pages/Settings'
 import Placeholder from './pages/Placeholder'
-import Login from './pages/Login'
-import {clearStoredAuth, getJson, getStoredAuth, logout, setStoredAuth, type AuthSession, type AuthUser} from './api'
-import {canAccessPage, resolvePage, roleHomePage} from './authz'
+import {type AuthSession, PUBLIC_SESSION} from './api'
+import {canAccessPage, resolvePage} from './authz'
+
 const initialPage=()=>new URLSearchParams(window.location.search).get('page')||'dashboard'
 
 export default function App(){
  const[page,setPageState]=useState(initialPage)
- const[auth,setAuth]=useState<AuthSession|null>(()=>getStoredAuth())
- const[checking,setChecking]=useState(()=>Boolean(getStoredAuth()))
-
- useEffect(()=>{
-  const stored=getStoredAuth()
-  if(!stored){setChecking(false);return}
-  getJson<AuthUser>('/api/auth/me').then(user=>{
-   const session={...stored,user}
-   setStoredAuth(session)
-   setAuth(session)
-  }).catch(()=>{
-   clearStoredAuth()
-   setAuth(null)
-  }).finally(()=>setChecking(false))
- },[])
+ const[auth]=useState<AuthSession>(PUBLIC_SESSION)
 
  const commitPage=(target:string,session=auth)=>{
-  if(!session)return
   const next=resolvePage(target,session.user.role)
   setPageState(next)
   const url=new URL(window.location.href)
@@ -50,23 +35,8 @@ export default function App(){
   window.history.replaceState(null,'',url)
  }
 
- const onLogin=(session:AuthSession)=>{
-  setAuth(session)
-  commitPage(roleHomePage(session.user.role),session)
- }
-
- const onLogout=async()=>{
-  try{await logout()}catch(error){window.alert(`Logout failed: ${String(error)}`);return}
-  setAuth(null)
-  setPageState('dashboard')
-  window.history.replaceState(null,'',window.location.pathname)
- }
-
- const activePage=auth?resolvePage(page,auth.user.role):page
- useEffect(()=>{if(auth&&activePage!==page)commitPage(activePage)},[auth,activePage,page])
-
- if(checking)return <main className="loginPage"><section className="loginPanel">Checking login...</section></main>
- if(!auth)return <Login onLogin={onLogin}/>
+ const activePage=resolvePage(page,auth.user.role)
+ useEffect(()=>{if(activePage!==page)commitPage(activePage)},[auth,activePage,page])
 
  let content:any
  switch(activePage){
@@ -89,5 +59,5 @@ export default function App(){
   case'settings':content=<SettingsPage/>;break
   default:content=canAccessPage(activePage,auth.user.role)?<Placeholder page={activePage}/>:<Inbox/>
  }
- return <Layout page={activePage} setPage={commitPage} user={auth.user} onLogout={onLogout}>{content}</Layout>
+ return <Layout page={activePage} setPage={commitPage} user={auth.user}>{content}</Layout>
 }
