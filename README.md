@@ -14,7 +14,6 @@ Use Node.js 24 or newer:
 
 ```sh
 npm ci
-npm --prefix frontend ci
 npm run db:local
 npm run admin:local
 npm run build
@@ -26,6 +25,7 @@ Copy `.dev.vars.example` to `.dev.vars` and replace the placeholder secrets. Ope
 `npm run ci` runs type checks, isolated integration tests, and the production frontend build. Tests use SQLite plus a fake R2 bucket and do not contact production, Gmail, or a billing service. `npx wrangler deploy --dry-run` checks the Worker bundle and assets.
 
 `npm run verify:live` verifies the deployed UI routes, D1 health, administrator login, API reads, role protection, and cookie logout using the ignored local administrator credentials. It writes `test-results/live-verification.json` and creates no ERP business records.
+For the current temporary public-access mode, run `npm run verify:live -- --public-access`; this explicitly verifies the public user instead of expecting anonymous requests to return 401.
 
 ## Git deployment flow
 
@@ -34,7 +34,7 @@ Work on a feature branch, open a pull request to `main`, and run the GitHub vali
 Workers Builds configuration:
 
 - Repository: `orozone08-sketch/waxprint-erp-starter`; production branch: `main`; root: `/`.
-- Build: `npm --prefix frontend ci && npm run ci` (root dependencies are installed by Workers Builds).
+- Build: `npm run ci` (Workers Builds runs root `npm ci`, whose postinstall also installs the locked frontend dependencies).
 - Deploy: `npm run deploy:worker` (applies append-only D1 migrations before deploying).
 - Node version: `24`. Non-production branch builds disabled to avoid binding PR previews to production D1.
 

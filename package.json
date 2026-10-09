@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "postinstall": "npm --prefix frontend ci",
     "dev": "wrangler dev",
     "build": "npm --prefix frontend run build",
     "check": "tsc --noEmit",
