@@ -15,7 +15,8 @@
     "admin:local": "node scripts/bootstrap-admin.mjs",
     "admin:remote": "node scripts/bootstrap-admin.mjs --remote",
     "ci": "npm run check && npm test && npm run build",
-    "deploy:worker": "wrangler d1 migrations apply DB --remote && wrangler deploy"
+    "deploy:worker": "wrangler d1 migrations apply DB --remote && wrangler deploy",
+    "verify:live": "node scripts/verify-live.mjs"
   },
   "dependencies": {
     "hono": "^4.12.27"

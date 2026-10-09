@@ -109,6 +109,3 @@ export function registerProduction(app: Hono<Env>) {
   })
   app.get('/api/reports/quality', async c => { const a = await one(c, "SELECT COALESCE(SUM(expected_qty),0) expected_pieces,COALESCE(SUM(good_qty),0) good_pieces,COALESCE(SUM(bad_qty),0) bad_pieces FROM print_attempts WHERE status IN ('QC_PASSED','QC_FAILED')") as Row; const r = await one(c, "SELECT SUM(CASE WHEN source='INTERNAL_QC' THEN 1 ELSE 0 END) internal_reshoot_tickets,SUM(CASE WHEN source='CUSTOMER_RETURN' THEN 1 ELSE 0 END) customer_return_reshoots FROM reshoot_tickets") as Row; return c.json({ ...a, first_pass_yield_pct: a.expected_pieces ? Math.round(a.good_pieces / a.expected_pieces * 10000) / 100 : 0, internal_reshoot_tickets: r.internal_reshoot_tickets || 0, customer_return_reshoots: r.customer_return_reshoots || 0 }) })
 }
-
-
-

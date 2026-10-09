@@ -24,6 +24,8 @@ Copy `.dev.vars.example` to `.dev.vars` and replace the placeholder secrets. Ope
 
 `npm run ci` runs type checks, isolated integration tests, and the production frontend build. Tests use SQLite plus a fake R2 bucket and do not contact production, Gmail, or a billing service. `npx wrangler deploy --dry-run` checks the Worker bundle and assets.
 
+`npm run verify:live` verifies the deployed UI routes, D1 health, administrator login, API reads, role protection, and cookie logout using the ignored local administrator credentials. It writes `test-results/live-verification.json` and creates no ERP business records.
+
 ## Git deployment flow
 
 Work on a feature branch, open a pull request to `main`, and run the GitHub validation workflow. Push/merge to `main` triggers the connected **Cloudflare Workers Builds** pipeline. There is no Cloudflare token stored in GitHub.
@@ -66,6 +68,8 @@ Enable the Gmail API in a Google Cloud project. Create a desktop OAuth client an
 In Settings, enable Gmail, enter the connected mailbox address, label ID (e.g. `INBOX`), search query (e.g. `is:unread`), and import limit. Test Connection verifies Google's configured mailbox; Fetch Gmail imports matching messages idempotently. Google testing-mode refresh tokens can expire; configure the OAuth app's publication/access policy for a durable connection. Live mailbox testing requires credentials and is separate from the mocked OAuth integration tests.
 
 The optional push endpoint requires `GMAIL_PUSH_TOKEN` as a Bearer token and only records receipts. Manual fetch is the default; no Pub/Sub setup or background mailbox polling is required.
+
+Platform references: [Workers Builds configuration](https://developers.cloudflare.com/workers/ci-cd/builds/configuration/), [Worker static assets](https://developers.cloudflare.com/workers/static-assets/), [Gmail read-only scopes](https://developers.google.com/workspace/gmail/api/auth/scopes).
 
 ## Legacy starter reference
 

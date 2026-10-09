@@ -5,6 +5,7 @@
   "account_id": "1a970a489b3675156722383f7ce0fffd",
   "compatibility_date": "2026-10-09",
   "workers_dev": true,
+  "preview_urls": false,
   "assets": {
     "directory": "frontend/dist", "binding": "ASSETS",
     "not_found_handling": "single-page-application",
