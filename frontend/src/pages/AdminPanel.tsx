@@ -16,8 +16,8 @@ type AdminAllData={total_records:number;datasets:AdminDataset[]}
 type Quality={expected_pieces:number;good_pieces:number;bad_pieces:number;first_pass_yield_pct:number;internal_reshoot_tickets:number;customer_return_reshoots:number}
 type Reshoot={id:number;number:string;source:string;reason:string;quantity:number;responsibility:string;chargeable:boolean;status:string}
 type JobProfit={job:string;customer:string;weight_g:number;revenue:number;direct_cost:number;gross_profit:number;margin_pct:number}
-type AdminData={customers:Customer[];employees:Employee[];jobs:Job[];machines:Machine[];materials:Material[];expenses:Expense[];invoices:Invoice[];integrations:Integrations;health:{ok:boolean;app:string};allData:AdminAllData;users:AuthUser[];dashboard:DashboardData;quality:Quality;reshoots:Reshoot[];profitability:JobProfit[]}
-type GmailFormState={enabled:boolean;user:string;app_password:string;mailbox:string;fetch_query:string;fetch_limit:string}
+type AdminData={customers:Customer[];employees:Employee[];jobs:Job[];machines:Machine[];materials:Material[];expenses:Expense[];invoices:Invoice[];integrations:Integrations;health:{ok:boolean;app:string;file_storage?:string};allData:AdminAllData;users:AuthUser[];dashboard:DashboardData;quality:Quality;reshoots:Reshoot[];profitability:JobProfit[]}
+type GmailFormState={enabled:boolean;user:string;mailbox:string;fetch_query:string;fetch_limit:string}
 type GmailSave={ok:boolean;message:string;gmail:Integrations['gmail']}
 type GmailTest={ok:boolean;message:string;gmail:Integrations['gmail']}
 
@@ -34,7 +34,7 @@ export default function AdminPanel({setPage}:{setPage:(page:string)=>void}){
  const[modulePageKey,setModulePageKey]=useState(initialModule)
  const[dataSearch,setDataSearch]=useState('')
  const[userForm,setUserForm]=useState({username:'',display_name:'',password:'',role:'STAFF',active:true})
- const[gmailForm,setGmailForm]=useState<GmailFormState>({enabled:true,user:'',app_password:'',mailbox:'INBOX',fetch_query:'UNSEEN',fetch_limit:'25'})
+ const[gmailForm,setGmailForm]=useState<GmailFormState>({enabled:true,user:'',mailbox:'INBOX',fetch_query:'is:unread',fetch_limit:'25'})
  const[gmailNotice,setGmailNotice]=useState('')
  const[gmailError,setGmailError]=useState('')
  const[userNotice,setUserNotice]=useState('')
@@ -55,7 +55,7 @@ export default function AdminPanel({setPage}:{setPage:(page:string)=>void}){
     getJson<Expense[]>('/api/expenses'),
     getJson<Invoice[]>('/api/invoices'),
     getJson<Integrations>('/api/settings/integrations'),
-    getJson<{ok:boolean;app:string}>('/health'),
+    getJson<{ok:boolean;app:string;file_storage?:string}>('/health'),
     getJson<AdminAllData>('/api/admin/all-data'),
     getJson<AuthUser[]>('/api/auth/users'),
     getJson<DashboardData>('/api/dashboard'),
@@ -68,9 +68,8 @@ export default function AdminPanel({setPage}:{setPage:(page:string)=>void}){
     ...form,
     enabled:integrations.gmail.enabled,
     user:integrations.gmail.user||form.user,
-    app_password:'',
     mailbox:integrations.gmail.mailbox||'INBOX',
-    fetch_query:integrations.gmail.fetch_query||'UNSEEN',
+    fetch_query:integrations.gmail.fetch_query||'is:unread',
     fetch_limit:String(integrations.gmail.fetch_limit||25)
    }))
    if(activeDatasetKey!=='all_records'&&!allData.datasets.some(dataset=>dataset.key===activeDatasetKey))setActiveDatasetKey('all_records')
@@ -134,15 +133,12 @@ export default function AdminPanel({setPage}:{setPage:(page:string)=>void}){
    const saved=await postJson<GmailSave>('/api/settings/gmail',{
     enabled:true,
     user:gmailForm.user,
-    app_password:gmailForm.app_password||null,
-    clear_password:false,
     mailbox:gmailForm.mailbox||'INBOX',
-    fetch_query:gmailForm.fetch_query||'UNSEEN',
+    fetch_query:gmailForm.fetch_query||'is:unread',
     fetch_limit:Number(gmailForm.fetch_limit)||25
    })
    updateGmailState(saved.gmail)
    setGmailNotice(saved.message)
-   setGmailForm(form=>({...form,app_password:''}))
   }catch(x){setGmailError(String(x))}
   finally{setLoading(false)}
  }
@@ -164,16 +160,14 @@ export default function AdminPanel({setPage}:{setPage:(page:string)=>void}){
    const saved=await postJson<GmailSave>('/api/settings/gmail',{
     enabled:false,
     user:'',
-    app_password:null,
-    clear_password:true,
     mailbox:'INBOX',
-    fetch_query:'UNSEEN',
+    fetch_query:'is:unread',
     fetch_limit:25
    })
    await postJson('/api/inbox/gmail/clear',{})
    updateGmailState(saved.gmail)
-   setGmailNotice('Gmail account and old imported Gmail rows removed. Add another account now.')
-   setGmailForm({enabled:true,user:'',app_password:'',mailbox:'INBOX',fetch_query:'UNSEEN',fetch_limit:'25'})
+   setGmailNotice('Gmail intake disabled and imported Gmail rows cleared. OAuth connection remains managed by your administrator.')
+   setGmailForm({enabled:true,user:'',mailbox:'INBOX',fetch_query:'is:unread',fetch_limit:'25'})
    await load()
   }catch(x){setGmailError(String(x))}
   finally{setLoading(false)}
@@ -276,6 +270,7 @@ export default function AdminPanel({setPage}:{setPage:(page:string)=>void}){
    <section className="subPanel" id="admin-system-health">
     <div className="panelHead"><h2>System Health</h2><small>{data.health.app}</small></div>
     <div className="adminHealth">
+     <Health icon={<Activity size={18}/>} label="File Storage" value={data.health.file_storage==='R2'?'Enabled':'Not enabled'} tone={data.health.file_storage==='R2'?'good':'warn'}/>
      <Health icon={<Activity size={18}/>} label="Backend API" value={data.health.ok?'Online':'Offline'} tone={data.health.ok?'good':'bad'}/>
      <Health icon={<Mail size={18}/>} label="Gmail Intake" value={data.integrations.gmail.configured?'Saved':'Setup'} tone={data.integrations.gmail.configured?'good':'warn'}/>
      <Health icon={<Wrench size={18}/>} label="Magics Agent" value={data.integrations.magics.agent_token_configured?'Ready':'Default'} tone={data.integrations.magics.agent_token_configured?'good':'warn'}/>
@@ -402,22 +397,25 @@ function ModulePage({dataset,rows,search,setSearch,onBack}:{dataset:AdminDataset
 function GmailAdminSetup({gmail,form,setForm,notice,error,loading,onSave,onTest,onRemove}:{gmail:Integrations['gmail'];form:GmailFormState;setForm:Dispatch<SetStateAction<GmailFormState>>;notice:string;error:string;loading:boolean;onSave:(event:FormEvent)=>void;onTest:()=>void;onRemove:()=>void}){
  return <section className="subPanel adminGmailSetup" id="admin-gmail-setup">
   <div className="panelHead">
-   <div><h2>Gmail Intake Setup</h2><small>{gmail.configured?'Connected settings saved':'Add Gmail email and password'}</small></div>
+   <div><h2>Gmail Intake Setup</h2><small>{gmail.configured?'Connected settings saved':'Set up the Gmail OAuth connection'}</small></div>
    <span className={`healthPill ${gmail.configured?'good':'warn'}`}>{gmail.configured?'Saved':'Setup'}</span>
   </div>
   <div className="integrationRows">
    <GmailInfo label="Enabled" value={gmail.enabled?'Yes':'No'}/>
    <GmailInfo label="Configured" value={gmail.configured?'Yes':'No'}/>
    <GmailInfo label="Account" value={gmail.user||'Not set'}/>
-   <GmailInfo label="Fetch" value={`${gmail.fetch_query||'UNSEEN'} / ${gmail.fetch_limit||0}`}/>
+   <GmailInfo label="Fetch" value={`${gmail.fetch_query||'is:unread'} / ${gmail.fetch_limit||0}`}/>
   </div>
+  <p>Gmail uses a secure OAuth connection. Your administrator must configure the Gmail client ID, client secret and refresh token in Cloudflare. Then save the account and intake filters here.</p>
   <form className="settingsForm gmailSettingsForm" onSubmit={onSave}>
    <label>Email<input type="email" value={form.user} onChange={event=>setForm({...form,user:event.target.value})} placeholder="name@gmail.com" required/></label>
-   <label>Password<input type="password" value={form.app_password} onChange={event=>setForm({...form,app_password:event.target.value})} placeholder="Enter password" autoComplete="new-password"/></label>
+   <label>Gmail label<input value={form.mailbox} onChange={e=>setForm({...form,mailbox:e.target.value})} placeholder="INBOX"/></label>
+   <label>Search query<input value={form.fetch_query} onChange={e=>setForm({...form,fetch_query:e.target.value})} placeholder="is:unread"/></label>
+   <label>Fetch limit<input type="number" min="1" max="100" value={form.fetch_limit} onChange={e=>setForm({...form,fetch_limit:e.target.value})}/></label>
    <div className="settingsActions">
     <button className="primaryBtn" type="submit" disabled={loading||!form.user}><Save size={16}/>Save Gmail</button>
     <button className="secondaryBtn" type="button" onClick={onTest} disabled={loading||!gmail.configured}><CheckCircle2 size={16}/>Test</button>
-   <button className="secondaryBtn" type="button" onClick={onRemove} disabled={loading||!gmail.configured}><Trash2 size={16}/>Remove Gmail</button>
+   <button className="secondaryBtn" type="button" onClick={onRemove} disabled={loading||!gmail.configured}><Trash2 size={16}/>Disable and clear imports</button>
    </div>
   </form>
   {notice&&<div className="successBox">{notice}</div>}

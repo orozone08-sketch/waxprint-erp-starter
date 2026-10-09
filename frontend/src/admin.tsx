@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client'
 import {ArrowLeft, ExternalLink, LogOut} from 'lucide-react'
 import AdminPanel from './pages/AdminPanel'
 import Login from './pages/Login'
-import {clearStoredAuth, getJson, getStoredAuth, setStoredAuth, type AuthSession, type AuthUser} from './api'
+import {clearStoredAuth, getJson, getStoredAuth, logout as logoutSession, setStoredAuth, type AuthSession, type AuthUser} from './api'
 import './styles.css'
 
 function goToMain(page:string){
@@ -42,8 +42,8 @@ function AdminApp(){
   }).finally(()=>setChecking(false))
  },[])
 
- const logout=()=>{
-  clearStoredAuth()
+ const logout=async()=>{
+  try{await logoutSession()}catch(error){window.alert(`Logout failed: ${String(error)}`);return}
   setAuth(null)
  }
 

@@ -1,0 +1,6 @@
+AUTH_SECRET=replace-with-a-random-secret-of-at-least-32-characters
+AGENT_TOKEN=replace-with-your-local-magics-agent-token
+# Optional Gmail OAuth connection:
+# GMAIL_CLIENT_ID=
+# GMAIL_CLIENT_SECRET=
+# GMAIL_REFRESH_TOKEN=

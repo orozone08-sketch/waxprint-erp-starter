@@ -13,3 +13,10 @@ __pycache__/
 *.tsbuildinfo
 .tmp/
 *.lnk
+node_modules/
+.wrangler/
+.dev.vars
+.env
+.secrets/
+test-results/
+.tmp-*

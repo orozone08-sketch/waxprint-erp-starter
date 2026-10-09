@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "waxprint-erp",
+  "main": "worker/index.ts",
+  "account_id": "1a970a489b3675156722383f7ce0fffd",
+  "compatibility_date": "2026-10-09",
+  "workers_dev": true,
+  "assets": {
+    "directory": "frontend/dist", "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/health"]
+  },
+  "d1_databases": [{
+    "binding": "DB", "database_name": "waxprint-erp",
+    "database_id": "e7a2d654-5471-4bb7-89b1-299ad45218e7",
+    "migrations_dir": "migrations"
+  }],
+  "observability": {"enabled": true}
+}

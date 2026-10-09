@@ -22,7 +22,7 @@ export default function SettingsPage(){
  const[supplier,setSupplier]=useState({code:'',name:'',gst_number:'',contact:''})
  const[machine,setMachine]=useState({code:'',name:'',model:'',serial_number:'',status:'AVAILABLE'})
  const[material,setMaterial]=useState({code:'',name:'',unit:'kit',minimum_stock:'1'})
- const[gmailForm,setGmailForm]=useState({enabled:true,user:'',app_password:'',mailbox:'INBOX',fetch_query:'UNSEEN',fetch_limit:'25'})
+ const[gmailForm,setGmailForm]=useState({enabled:true,user:'',mailbox:'INBOX',fetch_query:'is:unread',fetch_limit:'25'})
  const[notice,setNotice]=useState('')
  const[error,setError]=useState('')
  const[loading,setLoading]=useState(false)
@@ -47,9 +47,8 @@ export default function SettingsPage(){
    ...form,
    enabled:i.gmail.enabled,
    user:i.gmail.user||form.user,
-   app_password:'',
    mailbox:i.gmail.mailbox||'INBOX',
-   fetch_query:i.gmail.fetch_query||'UNSEEN',
+   fetch_query:i.gmail.fetch_query||'is:unread',
    fetch_limit:String(i.gmail.fetch_limit||25)
   }))
  }
@@ -69,14 +68,12 @@ export default function SettingsPage(){
   const saved=await postJson<GmailSave>('/api/settings/gmail',{
    enabled:true,
    user:gmailForm.user,
-   app_password:gmailForm.app_password||null,
-   clear_password:false,
    mailbox:gmailForm.mailbox||'INBOX',
-   fetch_query:gmailForm.fetch_query||'UNSEEN',
+   fetch_query:gmailForm.fetch_query||'is:unread',
    fetch_limit:Number(gmailForm.fetch_limit)||25
   })
   setIntegrations(current=>current?{...current,gmail:saved.gmail}:current)
- },'Gmail settings saved.').then(()=>setGmailForm(form=>({...form,app_password:''})))}
+ },'Gmail settings saved.')}
  const testGmail=()=>run(async()=>{
   const result=await postJson<GmailTest>('/api/settings/gmail/test',{})
   if(!result.ok)throw new Error(result.message)
@@ -86,15 +83,13 @@ export default function SettingsPage(){
   const saved=await postJson<GmailSave>('/api/settings/gmail',{
    enabled:false,
    user:'',
-   app_password:null,
-   clear_password:true,
    mailbox:'INBOX',
-   fetch_query:'UNSEEN',
+   fetch_query:'is:unread',
    fetch_limit:25
   })
   await postJson('/api/inbox/gmail/clear',{})
   setIntegrations(current=>current?{...current,gmail:saved.gmail}:current)
- },'Gmail account and old imported Gmail rows removed. Add another account now.').then(()=>setGmailForm({enabled:true,user:'',app_password:'',mailbox:'INBOX',fetch_query:'UNSEEN',fetch_limit:'25'}))
+ },'Gmail intake disabled and imported Gmail rows cleared. OAuth connection remains managed by your administrator.').then(()=>setGmailForm({enabled:true,user:'',mailbox:'INBOX',fetch_query:'is:unread',fetch_limit:'25'}))
  const jumpTo=(section:string, ref:RefObject<HTMLElement|null>)=>{
   setHighlight(section)
   ref.current?.scrollIntoView({behavior:'smooth',block:'start'})
@@ -125,16 +120,19 @@ export default function SettingsPage(){
      <Info label="Configured" value={integrations?.gmail.configured?'Yes':'No'}/>
      <Info label="Mode" value={integrations?.gmail.mode||'none'}/>
      <Info label="Account" value={integrations?.gmail.user||'Not set'}/>
-     <Info label="Mailbox" value={integrations?.gmail.mailbox||'INBOX'}/>
-     <Info label="Fetch" value={`${integrations?.gmail.fetch_query||'UNSEEN'} / ${integrations?.gmail.fetch_limit||0}`}/>
+     <Info label="Gmail label" value={integrations?.gmail.mailbox||'INBOX'}/>
+     <Info label="Fetch" value={`${integrations?.gmail.fetch_query||'is:unread'} / ${integrations?.gmail.fetch_limit||0}`}/>
     </div>
+    <p>Gmail uses a secure OAuth connection. Your administrator must configure the Gmail client ID, client secret and refresh token in Cloudflare. Then save the account and intake filters here.</p>
     <form className="settingsForm gmailSettingsForm" onSubmit={saveGmail}>
      <label>Email<input type="email" value={gmailForm.user} onChange={e=>setGmailForm({...gmailForm,user:e.target.value})} placeholder="name@gmail.com" required/></label>
-     <label>Password<input type="password" value={gmailForm.app_password} onChange={e=>setGmailForm({...gmailForm,app_password:e.target.value})} placeholder="Enter password" autoComplete="new-password"/></label>
+     <label>Gmail label<input value={gmailForm.mailbox} onChange={e=>setGmailForm({...gmailForm,mailbox:e.target.value})} placeholder="INBOX"/></label>
+     <label>Search query<input value={gmailForm.fetch_query} onChange={e=>setGmailForm({...gmailForm,fetch_query:e.target.value})} placeholder="is:unread"/></label>
+     <label>Fetch limit<input type="number" min="1" max="100" value={gmailForm.fetch_limit} onChange={e=>setGmailForm({...gmailForm,fetch_limit:e.target.value})}/></label>
      <div className="settingsActions">
       <button className="primaryBtn" type="submit" disabled={loading||!gmailForm.user}><Save size={16}/>Save Gmail</button>
       <button className="secondaryBtn" type="button" onClick={testGmail} disabled={loading||!integrations?.gmail.configured}><CheckCircle2 size={16}/>Test</button>
-      <button className="secondaryBtn" type="button" onClick={removeGmail} disabled={loading||!integrations?.gmail.configured}><Trash2 size={16}/>Remove Gmail</button>
+      <button className="secondaryBtn" type="button" onClick={removeGmail} disabled={loading||!integrations?.gmail.configured}><Trash2 size={16}/>Disable and clear imports</button>
      </div>
     </form>
    </MasterPanel>

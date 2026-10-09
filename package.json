@@ -1,0 +1,32 @@
+{
+  "name": "waxprint-erp-cloudflare",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "build": "npm --prefix frontend run build",
+    "check": "tsc --noEmit",
+    "test": "node --test tests/*.test.mjs",
+    "deploy": "npm run build && wrangler d1 migrations apply DB --remote && wrangler deploy",
+    "db:local": "wrangler d1 migrations apply DB --local",
+    "db:remote": "wrangler d1 migrations apply DB --remote",
+    "storage:enable": "node scripts/enable-storage.mjs",
+    "admin:local": "node scripts/bootstrap-admin.mjs",
+    "admin:remote": "node scripts/bootstrap-admin.mjs --remote",
+    "ci": "npm run check && npm test && npm run build",
+    "deploy:worker": "wrangler d1 migrations apply DB --remote && wrangler deploy"
+  },
+  "dependencies": {
+    "hono": "^4.12.27"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "latest",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.9.3",
+    "wrangler": "4.149.0"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

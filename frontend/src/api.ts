@@ -1,4 +1,4 @@
-export const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+export const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
 export type AppRole='ADMIN'|'ACCOUNTS'|'STAFF'|'OPERATOR'
 export type AuthUser={id:number;username:string;display_name:string;role:AppRole|string;active:boolean;created_at?:string}
@@ -21,6 +21,12 @@ export function setStoredAuth(session:AuthSession){
 
 export function clearStoredAuth(){
  window.localStorage.removeItem(AUTH_KEY)
+}
+
+export async function logout(){
+ const response=await fetch(`${API}/api/auth/logout`,{method:'POST',credentials:'include'})
+ if(!response.ok)throw new Error(await errorText(response))
+ clearStoredAuth()
 }
 
 export function authHeaders(headers:Record<string,string>={}):Record<string,string>{

@@ -19,7 +19,7 @@ import Reports from './pages/Reports'
 import SettingsPage from './pages/Settings'
 import Placeholder from './pages/Placeholder'
 import Login from './pages/Login'
-import {clearStoredAuth, getJson, getStoredAuth, setStoredAuth, type AuthSession, type AuthUser} from './api'
+import {clearStoredAuth, getJson, getStoredAuth, logout, setStoredAuth, type AuthSession, type AuthUser} from './api'
 import {canAccessPage, resolvePage, roleHomePage} from './authz'
 const initialPage=()=>new URLSearchParams(window.location.search).get('page')||'dashboard'
 
@@ -55,8 +55,8 @@ export default function App(){
   commitPage(roleHomePage(session.user.role),session)
  }
 
- const onLogout=()=>{
-  clearStoredAuth()
+ const onLogout=async()=>{
+  try{await logout()}catch(error){window.alert(`Logout failed: ${String(error)}`);return}
   setAuth(null)
   setPageState('dashboard')
   window.history.replaceState(null,'',window.location.pathname)
