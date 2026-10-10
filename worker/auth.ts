@@ -103,7 +103,7 @@ export function registerAuthRoutes(app: Hono<Env>) {
   app.post('/api/auth/users', async c => {
     requireRoles(c, 'ADMIN');
     const data = await c.req.json();
-    if (typeof data.username !== 'string' || !/^[a-zA-Z0-9_.-]{1,80}$/.test(data.username.trim()) || typeof data.password !== 'string' || data.password.length < 12 || data.password.length > 256 || typeof data.display_name !== 'string' || !data.display_name.trim()) fail(400, 'Provide a username, display name, and a password of 12–256 characters');
+    if (typeof data.username !== 'string' || !/^[a-zA-Z0-9_.-]{1,80}$/.test(data.username.trim()) || typeof data.password !== 'string' || data.password.length < 1 || data.password.length > 256 || typeof data.display_name !== 'string' || !data.display_name.trim()) fail(400, 'Provide a username, display name, and a password of 1–256 characters');
     const role = (data.role || 'STAFF').toUpperCase();
     if (!['ADMIN', 'ACCOUNTS', 'STAFF', 'OPERATOR'].includes(role)) fail(400, 'Invalid role');
     const username = data.username.trim().toLowerCase();
@@ -117,7 +117,7 @@ export function registerAuthRoutes(app: Hono<Env>) {
     const targetId = Number(c.req.param('id'));
     if (!Number.isInteger(targetId) || targetId < 1) fail(400, 'Invalid user ID');
     const data = await c.req.json();
-    if (typeof data.password !== 'string' || data.password.length < 12 || data.password.length > 256) fail(400, 'Password must be 12–256 characters');
+    if (typeof data.password !== 'string' || data.password.length < 1 || data.password.length > 256) fail(400, 'Password must be 1–256 characters');
     const target = await c.env.DB.prepare('SELECT id,username,company_id,role FROM app_users WHERE id=?').bind(targetId).first<Row>();
     if (!target) fail(404, 'Login account not found');
     const actor = c.get('user');
@@ -130,7 +130,7 @@ export function registerAuthRoutes(app: Hono<Env>) {
   });
   app.post('/api/auth/password', async c => {
     const data = await c.req.json();
-    if (typeof data.current_password !== 'string' || typeof data.new_password !== 'string' || data.new_password.length < 12 || data.new_password.length > 256) fail(400, 'Enter your current password and a new password of 12–256 characters');
+    if (typeof data.current_password !== 'string' || typeof data.new_password !== 'string' || data.new_password.length < 1 || data.new_password.length > 256) fail(400, 'Enter your current password and a new password of 1–256 characters');
     const actor = c.get('user');
     const current = await c.env.DB.prepare('SELECT * FROM app_users WHERE id=? AND active=1').bind(actor.id).first<Row>();
     if (!current || !await verifyPassword(data.current_password, current.password_hash)) fail(401, 'Current password is incorrect');

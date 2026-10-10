@@ -134,7 +134,7 @@ export default function AdminPanel({setPage}:{setPage:(page:string)=>void}){
  const resetUserPassword=async(user:AuthUser)=>{
   const password=resetPasswords[user.id]||''
   setUserError('');setUserNotice('')
-  if(password.length<12){setUserError('Temporary password must be at least 12 characters.');return}
+  if(!password){setUserError('Enter a temporary password.');return}
   setLoading(true)
   try{
    await postJson<{ok:boolean}>(`/api/auth/users/${user.id}/password`,{password})
@@ -146,7 +146,7 @@ export default function AdminPanel({setPage}:{setPage:(page:string)=>void}){
 
  const changeMyPassword=async(event:FormEvent)=>{
   event.preventDefault();setPasswordError('');setPasswordNotice('')
-  if(myPassword.new_password.length<12){setPasswordError('New password must be at least 12 characters.');return}
+  if(!myPassword.new_password){setPasswordError('Enter a new password.');return}
   if(myPassword.new_password!==myPassword.confirm_password){setPasswordError('New passwords do not match.');return}
   setLoading(true)
   try{
@@ -342,7 +342,7 @@ export default function AdminPanel({setPage}:{setPage:(page:string)=>void}){
     <form className="adminUserForm" onSubmit={createUser}>
      <label>Name<input value={userForm.display_name} onChange={e=>setUserForm({...userForm,display_name:e.target.value})} placeholder="Staff name" required /></label>
      <label>Username<input value={userForm.username} onChange={e=>setUserForm({...userForm,username:e.target.value})} placeholder="login id" required /></label>
-     <label>Password<input type="password" minLength={12} autoComplete="new-password" value={userForm.password} onChange={e=>setUserForm({...userForm,password:e.target.value})} placeholder="At least 12 characters" required /></label>
+     <label>Password<input type="password" maxLength={256} autoComplete="new-password" value={userForm.password} onChange={e=>setUserForm({...userForm,password:e.target.value})} placeholder="Set password" required /></label>
      <label>Role<select value={userForm.role} onChange={e=>setUserForm({...userForm,role:e.target.value})}><option value="STAFF">Staff</option><option value="OPERATOR">Operator</option><option value="ACCOUNTS">Accounts</option><option value="ADMIN">Admin</option></select></label>
      <label className="adminUserActive"><input type="checkbox" checked={userForm.active} onChange={e=>setUserForm({...userForm,active:e.target.checked})}/>Active</label>
      <button className="primaryBtn" type="submit" disabled={loading}><UserPlus size={16}/>Create Login</button>
@@ -355,7 +355,7 @@ export default function AdminPanel({setPage}:{setPage:(page:string)=>void}){
       <em>{prettyRole(user.role)}</em>
       <strong className={user.active?'':'inactive'}>{user.active?'Active':'Off'}</strong>
       {user.id!==getStoredAuth()?.user.id&&<div className="adminPasswordReset">
-       <input aria-label={`Temporary password for ${user.display_name}`} type="password" minLength={12} autoComplete="new-password" placeholder="New password (12+ chars)" value={resetPasswords[user.id]||''} onChange={e=>setResetPasswords(current=>({...current,[user.id]:e.target.value}))}/>
+       <input aria-label={`Temporary password for ${user.display_name}`} type="password" maxLength={256} autoComplete="new-password" placeholder="Set new password" value={resetPasswords[user.id]||''} onChange={e=>setResetPasswords(current=>({...current,[user.id]:e.target.value}))}/>
        <button type="button" className="secondaryBtn" disabled={loading||!(resetPasswords[user.id]||'')} onClick={()=>void resetUserPassword(user)}><LockKeyhole size={15}/>Reset</button>
       </div>}
      </article>)}
@@ -364,8 +364,8 @@ export default function AdminPanel({setPage}:{setPage:(page:string)=>void}){
      <div className="panelHead"><h3>Change My Admin Password</h3><small>Applies to your current admin login</small></div>
      <form className="adminPasswordForm" onSubmit={changeMyPassword}>
       <label>Current password<input type="password" autoComplete="current-password" value={myPassword.current_password} onChange={e=>setMyPassword({...myPassword,current_password:e.target.value})} required/></label>
-      <label>New password<input type="password" minLength={12} autoComplete="new-password" value={myPassword.new_password} onChange={e=>setMyPassword({...myPassword,new_password:e.target.value})} required/></label>
-      <label>Confirm new password<input type="password" minLength={12} autoComplete="new-password" value={myPassword.confirm_password} onChange={e=>setMyPassword({...myPassword,confirm_password:e.target.value})} required/></label>
+      <label>New password<input type="password" maxLength={256} autoComplete="new-password" value={myPassword.new_password} onChange={e=>setMyPassword({...myPassword,new_password:e.target.value})} required/></label>
+      <label>Confirm new password<input type="password" maxLength={256} autoComplete="new-password" value={myPassword.confirm_password} onChange={e=>setMyPassword({...myPassword,confirm_password:e.target.value})} required/></label>
       <button type="submit" className="primaryBtn" disabled={loading}><LockKeyhole size={15}/>Change My Password</button>
      </form>
      {passwordNotice&&<div className="successBox">{passwordNotice}</div>}{passwordError&&<div className="errorBox">{passwordError}</div>}

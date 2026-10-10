@@ -54,7 +54,7 @@ export default function Layout({page,setPage,children,user,onLogout,companyName}
  }
  const changePassword=async(event:FormEvent)=>{
   event.preventDefault();setPasswordError('');setPasswordNotice('')
-  if(passwordForm.new_password.length<12){setPasswordError('New password must be at least 12 characters.');return}
+  if(!passwordForm.new_password){setPasswordError('Enter a new password.');return}
   if(passwordForm.new_password!==passwordForm.confirm_password){setPasswordError('New passwords do not match.');return}
   try{
    const session=await postJson<AuthSession>('/api/auth/password',{current_password:passwordForm.current_password,new_password:passwordForm.new_password})
@@ -100,8 +100,8 @@ export default function Layout({page,setPage,children,user,onLogout,companyName}
     <header><div><small>Account security</small><h2 id="change-password-title">Change password</h2></div><button type="button" className="iconBtn" aria-label="Close" onClick={()=>setPasswordOpen(false)}><X size={17}/></button></header>
     <form className="passwordModalForm" onSubmit={changePassword}>
      <label>Current password<input type="password" autoComplete="current-password" value={passwordForm.current_password} onChange={event=>setPasswordForm({...passwordForm,current_password:event.target.value})} required/></label>
-     <label>New password<input type="password" minLength={12} autoComplete="new-password" value={passwordForm.new_password} onChange={event=>setPasswordForm({...passwordForm,new_password:event.target.value})} required/></label>
-     <label>Confirm new password<input type="password" minLength={12} autoComplete="new-password" value={passwordForm.confirm_password} onChange={event=>setPasswordForm({...passwordForm,confirm_password:event.target.value})} required/></label>
+     <label>New password<input type="password" maxLength={256} autoComplete="new-password" value={passwordForm.new_password} onChange={event=>setPasswordForm({...passwordForm,new_password:event.target.value})} required/></label>
+     <label>Confirm new password<input type="password" maxLength={256} autoComplete="new-password" value={passwordForm.confirm_password} onChange={event=>setPasswordForm({...passwordForm,confirm_password:event.target.value})} required/></label>
      <button className="primaryBtn" type="submit"><LockKeyhole size={15}/>Save password</button>
     </form>
     {passwordNotice&&<div className="successBox">{passwordNotice}</div>}{passwordError&&<div className="errorBox">{passwordError}</div>}
