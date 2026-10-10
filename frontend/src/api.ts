@@ -2,11 +2,9 @@
 // URLs so local development settings never leak into the deployed bundle.
 export const API = import.meta.env.PROD ? '' : (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
-export type AppRole='ADMIN'|'ACCOUNTS'|'STAFF'|'OPERATOR'
-export type AuthUser={id:number;username:string;display_name:string;role:AppRole|string;active:boolean;created_at?:string}
-export type AuthSession={token:string;user:AuthUser}
-
-export const PUBLIC_SESSION:AuthSession={token:'',user:{id:0,username:'public',display_name:'WaxPrint Team',role:'STAFF',active:true}}
+export type AppRole='SUPER_ADMIN'|'ADMIN'|'ACCOUNTS'|'STAFF'|'OPERATOR'
+export type AuthUser={id:number;username:string;display_name:string;role:AppRole|string;company_id:number|null;active:boolean;created_at?:string}
+export type AuthSession={token:string;user:AuthUser;active_company_id:number;active_company_name?:string}
 
 const AUTH_KEY='waxprint.auth'
 
@@ -34,8 +32,8 @@ export async function logout(){
 }
 
 export function authHeaders(headers:Record<string,string>={}):Record<string,string>{
- const token=getStoredAuth()?.token
- return token?{...headers,Authorization:`Bearer ${token}`}:headers
+ const session=getStoredAuth()
+ return session?{...headers,Authorization:`Bearer ${session.token}`,'X-Company-ID':String(session.active_company_id)}:headers
 }
 
 async function errorText(response:Response){
@@ -66,8 +64,8 @@ export async function postForm<T>(path:string, body:FormData):Promise<T>{
  return r.json()
 }
 
-export async function login(username:string,password:string):Promise<AuthSession>{
- const session=await postJson<AuthSession>('/api/auth/login',{username,password})
+export async function login(username:string,password:string,companySlug='aditya'):Promise<AuthSession>{
+ const session=await postJson<AuthSession>('/api/auth/login',{username,password,company_slug:companySlug})
  setStoredAuth(session)
  return session
 }

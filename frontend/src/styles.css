@@ -503,6 +503,18 @@ tr:last-child td{border-bottom:0}
 .settingsMiniTable p:last-child{border-bottom:0}
 .settingsMiniTable span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .adminHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:16px;border-bottom:1px solid #eef2f5;padding-bottom:16px}
+.adminHeaderActions{display:flex;align-items:flex-end;gap:10px}
+.adminCompanyPicker{display:grid;gap:5px;color:#667085;font-size:11px;font-weight:800}
+.adminCompanyPicker select{min-width:190px;border:1px solid #dce3ea;border-radius:8px;background:white;padding:9px 11px;color:#132838;font:inherit}
+.auditHint{color:#667085;font-size:12px;margin:0 0 12px}
+.adminAuditLogs{display:flex;flex-direction:column;gap:8px}
+.adminAuditLogs article{display:grid;grid-template-columns:minmax(140px,.7fr) minmax(180px,1fr) minmax(150px,.7fr) auto;align-items:center;gap:12px;border:1px solid #edf1f5;border-radius:8px;background:#f8fafc;padding:10px}
+.adminAuditLogs b,.adminAuditLogs small{display:block}
+.adminAuditLogs b{font-size:12px;color:#132838}
+.adminAuditLogs small,.adminAuditLogs time{font-size:11px;color:#667085}
+.adminAuditLogs strong{font-size:11px;color:#34495e;overflow-wrap:anywhere}
+.adminAuditLogs details{grid-column:1/-1;color:#667085;font-size:11px}
+.adminAuditLogs pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto;background:#fff;padding:8px;border-radius:6px}
 .adminHeader h2{margin:2px 0 5px;font-size:22px}
 .adminHeader span{display:block;color:#667085;font-size:13px}
 .adminActionGrid{display:grid;grid-template-columns:repeat(4,minmax(160px,1fr));gap:12px}
@@ -699,6 +711,9 @@ tr:last-child td{border-bottom:0}
  .advanceTabs{grid-template-columns:repeat(2,minmax(120px,1fr))}
  .settingsHeader{flex-direction:column}
  .adminHeader{flex-direction:column}
+ .adminHeaderActions{width:100%;flex-wrap:wrap}
+ .adminAuditLogs article{grid-template-columns:1fr;align-items:start}
+ .adminAuditLogs details{grid-column:auto}
  .adminDataHead{flex-direction:column}
  .adminModuleToolbar{align-items:stretch;flex-direction:column}
  .adminModuleToolbar label{width:100%}

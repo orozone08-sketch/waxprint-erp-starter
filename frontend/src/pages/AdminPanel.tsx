@@ -1,7 +1,7 @@
 import {type Dispatch, type FormEvent, type MouseEvent, type ReactNode, type SetStateAction, useEffect, useMemo, useState} from 'react'
 import {createPortal} from 'react-dom'
 import {Activity, AlertTriangle, BadgeCheck, Boxes, BriefcaseBusiness, CheckCircle2, Database, IndianRupee, LockKeyhole, Mail, PackageCheck, ReceiptText, RefreshCcw, RefreshCw, Save, Scale, Search, Settings, ShieldCheck, Trash2, TrendingUp, UserPlus, Users, WalletCards, Wrench} from 'lucide-react'
-import {getJson, postJson, type AuthUser} from '../api'
+import {getJson, getStoredAuth, setStoredAuth, postJson, type AuthUser} from '../api'
 import {Dashboard as DashboardData, Job} from '../types'
 
 type Customer={id:number;code:string;name:string;email:string|null;whatsapp:string|null;default_rate:number;credit_days:number}
@@ -13,10 +13,12 @@ type Invoice={id:number;number:string;customer_id:number;date:string;subtotal:nu
 type Integrations={gmail:{enabled:boolean;configured:boolean;mode:string;user:string;mailbox:string;fetch_query:string;fetch_limit:number;archive_label:string};magics:{agent_token_configured:boolean;workstation_default:string;local_agent_folder:string;queue_endpoint:string}}
 type AdminDataset={key:string;label:string;count:number;rows:Record<string,unknown>[]}
 type AdminAllData={total_records:number;datasets:AdminDataset[]}
+type Company={id:number;slug:string;name:string}
+type AuditEvent={id:number;company_name:string;module:string;record_id:number|null;action:string;details:string|null;user_name:string;created_at:string}
 type Quality={expected_pieces:number;good_pieces:number;bad_pieces:number;first_pass_yield_pct:number;internal_reshoot_tickets:number;customer_return_reshoots:number}
 type Reshoot={id:number;number:string;source:string;reason:string;quantity:number;responsibility:string;chargeable:boolean;status:string}
 type JobProfit={job:string;customer:string;weight_g:number;revenue:number;direct_cost:number;gross_profit:number;margin_pct:number}
-type AdminData={customers:Customer[];employees:Employee[];jobs:Job[];machines:Machine[];materials:Material[];expenses:Expense[];invoices:Invoice[];integrations:Integrations;health:{ok:boolean;app:string;file_storage?:string};allData:AdminAllData;users:AuthUser[];dashboard:DashboardData;quality:Quality;reshoots:Reshoot[];profitability:JobProfit[]}
+type AdminData={customers:Customer[];employees:Employee[];jobs:Job[];machines:Machine[];materials:Material[];expenses:Expense[];invoices:Invoice[];integrations:Integrations;health:{ok:boolean;app:string;file_storage?:string};allData:AdminAllData;users:AuthUser[];dashboard:DashboardData;quality:Quality;reshoots:Reshoot[];profitability:JobProfit[];companies:Company[];auditLogs:AuditEvent[]}
 type GmailFormState={enabled:boolean;user:string;mailbox:string;fetch_query:string;fetch_limit:string}
 type GmailSave={ok:boolean;message:string;gmail:Integrations['gmail']}
 type GmailTest={ok:boolean;message:string;gmail:Integrations['gmail']}
@@ -42,11 +44,12 @@ export default function AdminPanel({setPage}:{setPage:(page:string)=>void}){
  const[moduleSlot,setModuleSlot]=useState<HTMLElement|null>(null)
  const[error,setError]=useState('')
  const[loading,setLoading]=useState(false)
+ const[activeCompanyId,setActiveCompanyId]=useState(()=>getStoredAuth()?.active_company_id||1)
 
  const load=async()=>{
   setLoading(true);setError('')
   try{
-   const [customers,employees,jobs,machines,materials,expenses,invoices,integrations,health,allData,users,dashboard,quality,reshoots,profitability]=await Promise.all([
+   const [customers,employees,jobs,machines,materials,expenses,invoices,integrations,health,allData,users,dashboard,quality,reshoots,profitability,companies,auditLogs]=await Promise.all([
     getJson<Customer[]>('/api/customers'),
     getJson<Employee[]>('/api/employees'),
     getJson<Job[]>('/api/jobs'),
@@ -61,9 +64,11 @@ export default function AdminPanel({setPage}:{setPage:(page:string)=>void}){
     getJson<DashboardData>('/api/dashboard'),
     getJson<Quality>('/api/reports/quality'),
     getJson<Reshoot[]>('/api/reshoots'),
-    getJson<JobProfit[]>('/api/reports/job-profitability')
+    getJson<JobProfit[]>('/api/reports/job-profitability'),
+    getJson<Company[]>('/api/companies'),
+    getJson<AuditEvent[]>('/api/admin/audit-logs')
    ])
-   setData({customers,employees,jobs,machines,materials,expenses,invoices,integrations,health,allData,users,dashboard,quality,reshoots,profitability})
+   setData({customers,employees,jobs,machines,materials,expenses,invoices,integrations,health,allData,users,dashboard,quality,reshoots,profitability,companies,auditLogs})
    setGmailForm(form=>({
     ...form,
     enabled:integrations.gmail.enabled,
@@ -120,6 +125,16 @@ export default function AdminPanel({setPage}:{setPage:(page:string)=>void}){
    await load()
   }catch(x){setUserError(String(x))}
   finally{setLoading(false)}
+ }
+
+ const switchCompany=async(companyId:number)=>{
+  const session=getStoredAuth()
+  if(!session||session.user.role!=='SUPER_ADMIN')return
+  const company=data?.companies.find(item=>item.id===companyId)
+  if(!company)return
+  const updated={...session,active_company_id:company.id,active_company_name:company.name}
+  setStoredAuth(updated);setActiveCompanyId(company.id)
+  await load()
  }
 
  const updateGmailState=(gmail:Integrations['gmail'])=>{
@@ -193,7 +208,10 @@ export default function AdminPanel({setPage}:{setPage:(page:string)=>void}){
   </>:<>
   <div className="adminHeader">
    <div><p className="eyebrow">Admin</p><h2>Admin Panel</h2><span>Control center for users, masters, system health and financial checks.</span></div>
-   <button className="secondaryBtn" onClick={load} disabled={loading}><RefreshCw size={16}/>Refresh</button>
+   <div className="adminHeaderActions">
+    {getStoredAuth()?.user.role==='SUPER_ADMIN'&&<label className="adminCompanyPicker">Company<select value={activeCompanyId} onChange={e=>void switchCompany(Number(e.target.value))}>{data.companies.map(company=><option key={company.id} value={company.id}>{company.name}</option>)}</select></label>}
+    <button className="secondaryBtn" onClick={load} disabled={loading}><RefreshCw size={16}/>Refresh</button>
+   </div>
   </div>
 
   <div className="platformStats">
@@ -316,6 +334,20 @@ export default function AdminPanel({setPage}:{setPage:(page:string)=>void}){
      <Master label="Materials" value={data.materials.length} detail={`${summary.lowStock.length} low stock alert(s)`}/>
      <Master label="Expenses" value={money(summary.monthExpenses)} detail="This month"/>
     </div>
+   </div>
+  </section>
+
+  <section className="subPanel" id="change-history">
+   <div className="panelHead"><h2>Change History</h2><small>{data.auditLogs.length} recent changes</small></div>
+   <p className="auditHint">Successful changes show the employee, company, action and submitted fields. Passwords and tokens are redacted.</p>
+   <div className="adminAuditLogs">
+    {data.auditLogs.map(event=><article key={event.id}>
+     <div><b>{event.user_name}</b><small>{event.company_name} · {event.module}</small></div>
+     <strong>{event.action}</strong>
+     <time>{new Date(event.created_at+'Z').toLocaleString('en-IN')}</time>
+     {event.details&&<details><summary>Details</summary><pre>{event.details}</pre></details>}
+    </article>)}
+    {!data.auditLogs.length&&<div className="emptyState">No changes have been recorded yet.</div>}
    </div>
   </section>
   </>}

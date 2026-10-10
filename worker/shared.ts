@@ -6,18 +6,31 @@ export type Row = Record<string, any>;
 export type Env = {
   Bindings: {
     DB: D1Database; FILES?: R2Bucket; ASSETS: Fetcher;
+    DB_SUNMOON?: D1Database;
     AUTH_SECRET: string; AGENT_TOKEN?: string; GMAIL_PUSH_TOKEN?: string;
     GMAIL_CLIENT_ID?: string; GMAIL_CLIENT_SECRET?: string; GMAIL_REFRESH_TOKEN?: string;
   };
-  Variables: { user: Row };
+  Variables: { user: Row; companyId: number };
 };
 export type Ctx = Context<Env>;
 export function fail(status: number, message: string): never {
   throw new HTTPException(status as 400, { message });
 }
 export function requireRoles(c: Ctx, ...roles: string[]) {
-  if (!roles.includes(c.get('user')?.role)) fail(403, 'Admin access required');
+  const role = c.get('user')?.role;
+  if (role !== 'SUPER_ADMIN' && !roles.includes(role)) fail(403, 'Admin access required');
   return c.get('user');
+}
+export function activeCompanyId(c: Ctx): number {
+  const companyId = Number(c.get('companyId') ?? c.get('user')?.company_id ?? 1);
+  if (!Number.isInteger(companyId) || companyId < 1) fail(400, 'A valid company must be selected');
+  return companyId;
+}
+export function database(c: Ctx): D1Database {
+  const companyId = activeCompanyId(c);
+  if (companyId === 1) return c.env.DB;
+  if (companyId === 2 && c.env.DB_SUNMOON) return c.env.DB_SUNMOON;
+  fail(503, 'The selected company database is not configured');
 }
 export function code(prefix: string) {
   return `${prefix}-${new Date().getUTCFullYear()}-${crypto.randomUUID().replaceAll('-', '').slice(0, 16).toUpperCase()}`;
@@ -29,15 +42,15 @@ function normalize(row: Row): Row {
 }
 function bindings(values: any[]): any[] { return values.map(v => typeof v === 'boolean' ? Number(v) : v === undefined ? null : v); }
 export async function all(c: Ctx, sql: string, ...args: any[]): Promise<Row[]> {
-  const result = await c.env.DB.prepare(sql).bind(...bindings(args)).all<Row>();
+  const result = await database(c).prepare(sql).bind(...bindings(args)).all<Row>();
   return result.results.map(normalize);
 }
 export async function one(c: Ctx, sql: string, ...args: any[]): Promise<Row | null> {
-  const result = await c.env.DB.prepare(sql).bind(...bindings(args)).first<Row>();
+  const result = await database(c).prepare(sql).bind(...bindings(args)).first<Row>();
   return result ? normalize(result) : null;
 }
 export async function run(c: Ctx, sql: string, ...args: any[]) {
-  return c.env.DB.prepare(sql).bind(...bindings(args)).run();
+  return database(c).prepare(sql).bind(...bindings(args)).run();
 }
 function columns(table: string, data: Row) {
   const fields = (schema as Record<string, Record<string, {type: string; nullable: boolean}>>)[table];

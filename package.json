@@ -9,14 +9,14 @@
     "build": "npm --prefix frontend run build",
     "check": "tsc --noEmit",
     "test": "node --test tests/*.test.mjs",
-    "deploy": "npm run build && wrangler d1 migrations apply DB --remote && wrangler deploy",
-    "db:local": "wrangler d1 migrations apply DB --local",
-    "db:remote": "wrangler d1 migrations apply DB --remote",
+    "deploy": "npm run build && wrangler d1 migrations apply DB --remote && wrangler d1 migrations apply DB_SUNMOON --remote && wrangler deploy",
+    "db:local": "wrangler d1 migrations apply DB --local && wrangler d1 migrations apply DB_SUNMOON --local",
+    "db:remote": "wrangler d1 migrations apply DB --remote && wrangler d1 migrations apply DB_SUNMOON --remote",
     "storage:enable": "node scripts/enable-storage.mjs",
     "admin:local": "node scripts/bootstrap-admin.mjs",
     "admin:remote": "node scripts/bootstrap-admin.mjs --remote",
     "ci": "npm run check && npm test && npm run build",
-    "deploy:worker": "wrangler d1 migrations apply DB --remote && wrangler deploy",
+    "deploy:worker": "wrangler d1 migrations apply DB --remote && wrangler d1 migrations apply DB_SUNMOON --remote && wrangler deploy",
     "verify:live": "node scripts/verify-live.mjs"
   },
   "dependencies": {

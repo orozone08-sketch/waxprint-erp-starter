@@ -33,7 +33,7 @@ function AdminApp(){
   const stored=getStoredAuth()
   if(!stored){setChecking(false);return}
   getJson<AuthUser>('/api/auth/me').then(user=>{
-   if(user.role.toUpperCase()!=='ADMIN'){
+   if(!['ADMIN','SUPER_ADMIN'].includes(user.role.toUpperCase())){
     clearStoredAuth()
     setAuth(null)
     return
@@ -53,7 +53,7 @@ function AdminApp(){
  }
 
  if(checking)return <main className="loginPage"><section className="loginPanel">Checking admin session...</section></main>
- if(!auth)return <Login onLogin={setAuth} title="WaxPrint Admin" subtitle="Sign in with an administrator account" usernameLabel="Login ID" requiredRole="ADMIN" />
+ if(!auth)return <Login onLogin={setAuth} title="WaxPrint Admin" subtitle="Sign in with an administrator account" usernameLabel="Login ID" requiredRole="ADMIN" companySelector />
 
  return <div className="adminShell">
   <aside className="adminSideNav">

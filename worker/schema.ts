@@ -28,6 +28,10 @@ export const schema = {
     "created_at": {
       "type": "string",
       "nullable": false
+    },
+    "company_id": {
+      "type": "number",
+      "nullable": true
     }
   },
   "customers": {
@@ -1014,6 +1018,14 @@ export const schema = {
     "created_at": {
       "type": "string",
       "nullable": false
+    },
+    "company_id": {
+      "type": "number",
+      "nullable": false
+    },
+    "actor_user_id": {
+      "type": "number",
+      "nullable": true
     }
   }
 } as const;

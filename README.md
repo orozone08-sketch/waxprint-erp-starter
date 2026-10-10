@@ -3,10 +3,11 @@
 Production runs on **Hono + Cloudflare Workers + D1**, with React/Vite assets served by the same Worker. The Python backend below is retained as the legacy reference, not used by Cloudflare.
 
 - Cloudflare account: Orozone08@gmail.com's Account (`1a970a489b3675156722383f7ce0fffd`).
-- Worker: `waxprint-erp`. Database: `waxprint-erp` (`e7a2d654-5471-4bb7-89b1-299ad45218e7`).
+- Worker: `waxprint-erp`. Aditya International database: `waxprint-erp` (`e7a2d654-5471-4bb7-89b1-299ad45218e7`). Sunmoon Technology uses a separate D1 database (`waxprint-erp-sunmoon`).
 - R2 is intentionally disabled until the account owner activates it. Upload/download endpoints return HTTP 503 with a clear explanation; all other modules remain available. No demo records or default passwords are deployed.
 - Gmail uses its HTTPS OAuth API. No IMAP daemon or separate server is required. Imports preserve the starter's inbox behavior: message metadata/body and customer matching, without changing the mailbox or automatically creating attachment jobs.
-- The regular ERP opens without a login in temporary development mode. The separate admin page at /admin.html requires an administrator Login ID and password and provides the all-data panel. Set ALLOW_PUBLIC_ACCESS to false in worker/auth.ts before production to require login across the ERP.
+- Employees sign in with their company, individual username, and password. Company data is stored in separate D1 databases. The existing records are assigned to Aditya International; new Sunmoon Technology records start in its separate database.
+- `/admin.html` requires an administrator login. The central super administrator can switch companies, create employee accounts for either company, and review changes from both companies. Company administrators can manage accounts and data within their own company only.
 
 ## Development and verification
 
@@ -25,7 +26,7 @@ Copy `.dev.vars.example` to `.dev.vars` and replace the placeholder secrets. Ope
 `npm run ci` runs type checks, isolated integration tests, and the production frontend build. Tests use SQLite plus a fake R2 bucket and do not contact production, Gmail, or a billing service. `npx wrangler deploy --dry-run` checks the Worker bundle and assets.
 
 `npm run verify:live` verifies the deployed UI routes, D1 health, administrator login, API reads, role protection, and cookie logout using the ignored local administrator credentials. It writes `test-results/live-verification.json` and creates no ERP business records.
-For the current temporary public-access mode, run `npm run verify:live -- --public-access`; this explicitly verifies the public user instead of expecting anonymous requests to return 401.
+Unauthenticated business API requests return HTTP 401. The company directory and health endpoints remain public so the login screen can load company choices and connection status.
 
 ## Git deployment flow
 
@@ -42,7 +43,7 @@ For a manual release, `npm run deploy` builds the frontend, applies remote migra
 
 ## Initial administrator
 
-`npm run admin:remote` creates an administrator only if one does not already exist. The generated password is stored locally in `.secrets/initial-admin.json`, which is ignored by Git. The deploy process never resets or reseeds users. Add additional accounts from the administrator UI; passwords must contain at least 12 characters.
+`npm run admin:remote` creates a central administrator only if one does not already exist. The generated password is stored locally in `.secrets/initial-admin.json`, which is ignored by Git. Existing admin accounts are promoted to central administrators by the company migration. Add employee and company administrator accounts from the administrator UI; passwords must contain at least 12 characters.
 
 Runtime secrets (`npx wrangler secret put NAME`):
 

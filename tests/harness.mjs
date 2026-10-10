@@ -38,14 +38,15 @@ export async function fixture({storage = true} = {}) {
   const tokens = {}
   const password = 'local-test-password-123'
   const passwordHash = await hashPassword(password)
-  for (const role of ['ADMIN','ACCOUNTS','STAFF','OPERATOR']) {
-    const user = db.prepare('INSERT INTO app_users(username,display_name,role,password_hash) VALUES(?,?,?,?) RETURNING *').get(role.toLowerCase(), role, role, passwordHash)
-    tokens[role] = await tokenFor(user, env.AUTH_SECRET)
+  for (const role of ['SUPER_ADMIN','ADMIN','ACCOUNTS','STAFF','OPERATOR']) {
+    const companyId = role === 'SUPER_ADMIN' ? null : 1
+    const user = db.prepare('INSERT INTO app_users(username,display_name,role,password_hash,company_id) VALUES(?,?,?,?,?) RETURNING *').get(role.toLowerCase(), role, role, passwordHash, companyId)
+    tokens[role] = await tokenFor(user, env.AUTH_SECRET, 1)
   }
   const request = async (path, {method = 'GET', body, token = tokens.ADMIN, role, headers = {}} = {}) => {
     if (role) token = tokens[role]
     const init = {method, headers: {...headers}}
-    if (token) init.headers.Authorization = `Bearer ${token}`
+    if (token) { init.headers.Authorization = `Bearer ${token}`; init.headers['X-Company-ID'] ??= '1' }
     if (body !== undefined) { if (body instanceof FormData || typeof body === 'string') init.body = body; else { init.body = JSON.stringify(body); init.headers['Content-Type'] = 'application/json' } }
     return app.request(`http://localhost${path}`, init, env)
   }

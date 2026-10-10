@@ -54,7 +54,7 @@ test('missing R2 blocks intake and photo writes without partial records', async 
 
 test('authentication, authorization and service tokens enforce access', async t => {
   const h = await fixture(); t.after(h.close)
-  assert.deepEqual(await json(await h.request('/api/jobs', {token: null})), [])
+  await json(await h.request('/api/jobs', {token: null}), 401)
   await json(await h.request('/api/admin/all-data', {role: 'STAFF'}), 403)
   await json(await h.request('/api/inbox/gmail/clear', {method: 'POST', role: 'STAFF'}), 403)
   await json(await h.request('/api/magics/agent/jobs', {token: null}), 401)
@@ -106,7 +106,7 @@ test('login cookie authenticates downloads and logout clears browser session', a
   assert.equal((await h.request(`/api/job-files/${file.id}/download`, {token: null, headers: {Cookie: cookie}})).status, 200)
   const logout = await h.request('/api/auth/logout', {method: 'POST', token: null, headers: {Cookie: cookie}})
   assert.deepEqual(await json(logout), {ok: true}); assert.match(logout.headers.get('Set-Cookie'), /wax_session=;.*Max-Age=0/)
-  assert.equal((await json(await h.request('/api/auth/me', {token: null}))).username, 'public')
+  await json(await h.request('/api/auth/me', {token: null}), 401)
 })
 
 test('overlapping print and QC submissions commit exactly one attempt and ticket', async t => {

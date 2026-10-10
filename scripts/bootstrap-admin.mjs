@@ -13,7 +13,7 @@ catch {
 }
 const salt = randomBytes(16).toString('hex');
 const hash = `pbkdf2_sha256_cf$${salt}$${pbkdf2Sync(credentials.password, salt, 100000, 32, 'sha256').toString('hex')}`;
-const sql = `INSERT INTO app_users(username,display_name,role,password_hash,active) VALUES('admin','Administrator','ADMIN','${hash}',1) ON CONFLICT(username) DO NOTHING;\n`;
+const sql = `INSERT INTO app_users(username,display_name,role,password_hash,active,company_id) VALUES('admin','Administrator','SUPER_ADMIN','${hash}',1,NULL) ON CONFLICT(username) DO NOTHING;\n`;
 await writeFile(`${directory}/bootstrap.sql`, sql, {mode: 0o600});
 const executable = process.platform === 'win32' ? 'npx.cmd' : 'npx';
 execFileSync(executable, ['wrangler', 'd1', 'execute', 'DB', remote ? '--remote' : '--local', '--file', `${directory}/bootstrap.sql`], {stdio: 'inherit', shell: process.platform === 'win32'});

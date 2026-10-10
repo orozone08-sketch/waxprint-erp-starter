@@ -18,16 +18,30 @@ import Expenses from './pages/Expenses'
 import Reports from './pages/Reports'
 import SettingsPage from './pages/Settings'
 import Placeholder from './pages/Placeholder'
-import {type AuthSession, PUBLIC_SESSION} from './api'
+import {clearStoredAuth, getJson, getStoredAuth, logout, setStoredAuth, type AuthSession, type AuthUser} from './api'
 import {canAccessPage, resolvePage} from './authz'
+import Login from './pages/Login'
 
 const initialPage=()=>new URLSearchParams(window.location.search).get('page')||'dashboard'
 
 export default function App(){
  const[page,setPageState]=useState(initialPage)
- const[auth]=useState<AuthSession>(PUBLIC_SESSION)
+ const[auth,setAuth]=useState<AuthSession|null>(()=>getStoredAuth())
+ const[checking,setChecking]=useState(()=>Boolean(getStoredAuth()))
+
+ useEffect(()=>{
+  const stored=getStoredAuth()
+  if(!stored||!Number.isInteger(stored.active_company_id)){
+   clearStoredAuth();setAuth(null);setChecking(false);return
+  }
+  getJson<AuthUser>('/api/auth/me').then(user=>{
+   const session={...stored,user}
+   setStoredAuth(session);setAuth(session)
+  }).catch(()=>{clearStoredAuth();setAuth(null)}).finally(()=>setChecking(false))
+ },[])
 
  const commitPage=(target:string,session=auth)=>{
+  if(!session)return
   const next=resolvePage(target,session.user.role)
   setPageState(next)
   const url=new URL(window.location.href)
@@ -35,8 +49,11 @@ export default function App(){
   window.history.replaceState(null,'',url)
  }
 
- const activePage=resolvePage(page,auth.user.role)
- useEffect(()=>{if(activePage!==page)commitPage(activePage)},[auth,activePage,page])
+ const activePage=auth?resolvePage(page,auth.user.role):page
+ useEffect(()=>{if(auth&&activePage!==page)commitPage(activePage)},[auth,activePage,page])
+
+ if(checking)return <main className="loginPage"><section className="loginPanel">Checking employee session...</section></main>
+ if(!auth)return <Login onLogin={setAuth} companySelector title="WaxPrint ERP" subtitle="Sign in to your company workspace" />
 
  let content:any
  switch(activePage){
@@ -59,5 +76,6 @@ export default function App(){
   case'settings':content=<SettingsPage/>;break
   default:content=canAccessPage(activePage,auth.user.role)?<Placeholder page={activePage}/>:<Inbox/>
  }
- return <Layout page={activePage} setPage={commitPage} user={auth.user}>{content}</Layout>
+ const signOut=async()=>{try{await logout()}finally{clearStoredAuth();setAuth(null)}}
+ return <Layout page={activePage} setPage={commitPage} user={auth.user} companyName={auth.active_company_name} onLogout={signOut}>{content}</Layout>
 }

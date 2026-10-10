@@ -1,5 +1,5 @@
 import {ReactNode, useMemo, useState} from 'react'
-import { LayoutDashboard, Inbox, BriefcaseBusiness, Wrench, Layers3, Printer, CircleCheckBig, RefreshCcw, Scale, PackageCheck, Undo2, ReceiptIndianRupee, Boxes, WalletCards, Users, BarChart3, Settings, Search, Bell, ChevronDown } from 'lucide-react'
+import { LayoutDashboard, Inbox, BriefcaseBusiness, Wrench, Layers3, Printer, CircleCheckBig, RefreshCcw, Scale, PackageCheck, Undo2, ReceiptIndianRupee, Boxes, WalletCards, Users, BarChart3, Settings, Search, Bell, ChevronDown, LogOut } from 'lucide-react'
 import {getJson, type AuthUser} from '../api'
 import {canAccessPage, normalizePage, roleHomePage} from '../authz'
 import {Job} from '../types'
@@ -12,7 +12,7 @@ type Customer={id:number;code:string;name:string;email:string|null;whatsapp:stri
 type InboxMessage={id:number;source:string;sender:string|null;subject:string|null;received_at:string;status:string;customer_id:number|null;job_id:number|null}
 type SearchResult={id:string;page:string;kind:string;label:string;meta:string}
 
-export default function Layout({page,setPage,children,user}:{page:string;setPage:(p:string)=>void;children:ReactNode;user:AuthUser}){
+export default function Layout({page,setPage,children,user,onLogout,companyName}:{page:string;setPage:(p:string)=>void;children:ReactNode;user:AuthUser;onLogout:()=>void;companyName?:string}){
  const[query,setQuery]=useState('')
  const[searchOpen,setSearchOpen]=useState(false)
  const[searchLoaded,setSearchLoaded]=useState(false)
@@ -48,7 +48,7 @@ export default function Layout({page,setPage,children,user}:{page:string;setPage
  const runSearch=()=>{
   if(results[0])openResult(results[0].page)
  }
- const isAdmin=user.role.toUpperCase()==='ADMIN'
+ const isAdmin=['ADMIN','SUPER_ADMIN'].includes(user.role.toUpperCase())
  const userName=user.display_name||user.username
  const initials=userName.split(/\s+/).filter(Boolean).slice(0,2).map(part=>part[0]?.toUpperCase()).join('')||user.username.slice(0,2).toUpperCase()
  return <div className="shell">
@@ -72,7 +72,9 @@ export default function Layout({page,setPage,children,user}:{page:string;setPage
     </div>
     <div className="topbarActions">
      <button className="iconBtn" type="button" onClick={()=>setPage('inbox')} aria-label="Open notifications inbox"><Bell size={18}/><i></i></button>
-     {isAdmin&&<a className="userChip" href="/admin.html" aria-label="Open separate admin panel"><strong>{initials}</strong><span>{userName}<small>{pretty(user.role)}</small></span><ChevronDown size={15}/></a>}
+     {isAdmin&&<a className="userChip" href="/admin.html" aria-label="Open separate admin panel"><strong>{initials}</strong><span>{userName}<small>{pretty(user.role)} · {companyName||'All companies'}</small></span><ChevronDown size={15}/></a>}
+     {!isAdmin&&<div className="userChip"><strong>{initials}</strong><span>{userName}<small>{pretty(user.role)} · {companyName||'Company workspace'}</small></span></div>}
+     <button className="iconBtn" type="button" onClick={onLogout} aria-label="Sign out" title="Sign out"><LogOut size={17}/></button>
     </div>
    </header>
    {children}

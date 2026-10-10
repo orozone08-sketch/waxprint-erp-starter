@@ -1,6 +1,6 @@
 import {type AppRole} from './api'
 
-const allRoles:AppRole[]=['ADMIN','ACCOUNTS','STAFF','OPERATOR']
+const allRoles:AppRole[]=['SUPER_ADMIN','ADMIN','ACCOUNTS','STAFF','OPERATOR']
 
 export const pageAccess:Record<string,AppRole[]>={
  dashboard:['ADMIN'],
@@ -24,7 +24,7 @@ export const pageAccess:Record<string,AppRole[]>={
 
 export function normalizeRole(role:string|undefined):AppRole{
  const upper=(role||'STAFF').toUpperCase()
- return (['ADMIN','ACCOUNTS','STAFF','OPERATOR'] as string[]).includes(upper)?upper as AppRole:'STAFF'
+ return (['SUPER_ADMIN','ADMIN','ACCOUNTS','STAFF','OPERATOR'] as string[]).includes(upper)?upper as AppRole:'STAFF'
 }
 
 export function normalizePage(page:string){
@@ -33,12 +33,13 @@ export function normalizePage(page:string){
 
 export function canAccessPage(page:string,role:string|undefined){
  const pageKey=normalizePage(page)
- return (pageAccess[pageKey]||[]).includes(normalizeRole(role))
+ const normalized=normalizeRole(role)
+ return normalized==='SUPER_ADMIN'||(pageAccess[pageKey]||[]).includes(normalized)
 }
 
 export function roleHomePage(role:string|undefined){
  const normalized=normalizeRole(role)
- if(normalized==='ADMIN')return 'dashboard'
+ if(normalized==='ADMIN'||normalized==='SUPER_ADMIN')return 'dashboard'
  if(normalized==='ACCOUNTS')return 'inbox'
  return 'inbox'
 }
