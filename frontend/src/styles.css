@@ -592,9 +592,27 @@ tr:last-child td{border-bottom:0}
 .adminAttention small,.adminUsers small{display:block;color:#7b8794;font-size:11px;margin-top:2px}
 .adminAttention strong{font-size:12px;color:#132838;white-space:nowrap}
 .adminUsers article{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:10px;border:1px solid #edf1f5;border-radius:8px;background:#f8fafc;padding:10px}
+.adminUserIdentity{min-width:0}
 .adminUsers em{font-style:normal;color:#596979;font-size:12px;font-weight:800;white-space:nowrap}
 .adminUsers strong{font-size:10px;font-weight:900;color:#135b9d;background:#e9f3ff;border-radius:8px;padding:5px 8px;white-space:nowrap}
 .adminUsers strong.inactive{color:#8a5a00;background:#fff3d6}
+.adminPasswordReset{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}
+.adminPasswordReset input,.adminPasswordForm input{border:1px solid var(--line);border-radius:8px;background:#fff;color:#132838;padding:10px 11px;outline:0;min-width:0}
+.adminPasswordReset button{justify-content:center}
+.adminSelfPassword{margin-top:14px;padding:12px;border:1px solid #edf1f5;border-radius:8px;background:#f8fafc}
+.adminSelfPassword h3{margin:0;color:#132838;font-size:15px}
+.adminPasswordForm{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.adminPasswordForm label,.passwordModalForm label{display:flex;flex-direction:column;gap:6px;color:#596979;font-size:12px;font-weight:900;min-width:0}
+.adminPasswordForm button{align-self:end;justify-content:center}
+.passwordModalBackdrop{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;background:rgba(8,24,38,.55);padding:18px}
+.passwordModal{width:min(460px,100%);padding:20px;border:1px solid var(--line);border-radius:14px;background:#fff;box-shadow:0 24px 70px rgba(8,24,38,.25)}
+.passwordModal>header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px}
+.passwordModal>header small{color:#667085;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}
+.passwordModal h2{margin:4px 0 0;color:#132838;font-size:20px}
+.passwordModalForm{display:grid;gap:12px}
+.passwordModalForm input{border:1px solid var(--line);border-radius:8px;background:#fff;color:#132838;padding:10px 11px;outline:0}
+.passwordModalForm input:focus,.adminPasswordReset input:focus,.adminPasswordForm input:focus{border-color:var(--wax);box-shadow:0 0 0 3px rgba(233,77,79,.12)}
+.passwordModalForm .primaryBtn{justify-content:center;margin-top:4px}
 .adminUserForm{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;background:#f8fafc;border:1px solid #edf1f5;border-radius:8px;padding:12px;margin-bottom:10px}
 .adminUserForm label{display:flex;flex-direction:column;gap:6px;color:#596979;font-size:12px;font-weight:900;min-width:0}
 .adminUserForm input,.adminUserForm select{border:1px solid var(--line);border-radius:8px;background:#fff;color:#132838;padding:10px 11px;outline:0;min-width:0}

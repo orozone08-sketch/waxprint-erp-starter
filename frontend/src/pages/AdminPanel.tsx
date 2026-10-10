@@ -1,7 +1,7 @@
 import {type Dispatch, type FormEvent, type MouseEvent, type ReactNode, type SetStateAction, useEffect, useMemo, useState} from 'react'
 import {createPortal} from 'react-dom'
 import {Activity, AlertTriangle, BadgeCheck, Boxes, BriefcaseBusiness, CheckCircle2, Database, IndianRupee, LockKeyhole, Mail, PackageCheck, ReceiptText, RefreshCcw, RefreshCw, Save, Scale, Search, Settings, ShieldCheck, Trash2, TrendingUp, UserPlus, Users, WalletCards, Wrench} from 'lucide-react'
-import {getJson, getStoredAuth, setStoredAuth, postJson, type AuthUser} from '../api'
+import {getJson, getStoredAuth, setStoredAuth, postJson, type AuthSession, type AuthUser} from '../api'
 import {Dashboard as DashboardData, Job} from '../types'
 
 type Customer={id:number;code:string;name:string;email:string|null;whatsapp:string|null;default_rate:number;credit_days:number}
@@ -41,6 +41,10 @@ export default function AdminPanel({setPage}:{setPage:(page:string)=>void}){
  const[gmailError,setGmailError]=useState('')
  const[userNotice,setUserNotice]=useState('')
  const[userError,setUserError]=useState('')
+ const[resetPasswords,setResetPasswords]=useState<Record<number,string>>({})
+ const[myPassword,setMyPassword]=useState({current_password:'',new_password:'',confirm_password:''})
+ const[passwordNotice,setPasswordNotice]=useState('')
+ const[passwordError,setPasswordError]=useState('')
  const[moduleSlot,setModuleSlot]=useState<HTMLElement|null>(null)
  const[error,setError]=useState('')
  const[loading,setLoading]=useState(false)
@@ -124,6 +128,33 @@ export default function AdminPanel({setPage}:{setPage:(page:string)=>void}){
    setUserForm({username:'',display_name:'',password:'',role:'STAFF',active:true})
    await load()
   }catch(x){setUserError(String(x))}
+  finally{setLoading(false)}
+ }
+
+ const resetUserPassword=async(user:AuthUser)=>{
+  const password=resetPasswords[user.id]||''
+  setUserError('');setUserNotice('')
+  if(password.length<12){setUserError('Temporary password must be at least 12 characters.');return}
+  setLoading(true)
+  try{
+   await postJson<{ok:boolean}>(`/api/auth/users/${user.id}/password`,{password})
+   setResetPasswords(current=>({...current,[user.id]:''}))
+   setUserNotice(`Password reset for ${user.display_name}.`)
+  }catch(x){setUserError(String(x))}
+  finally{setLoading(false)}
+ }
+
+ const changeMyPassword=async(event:FormEvent)=>{
+  event.preventDefault();setPasswordError('');setPasswordNotice('')
+  if(myPassword.new_password.length<12){setPasswordError('New password must be at least 12 characters.');return}
+  if(myPassword.new_password!==myPassword.confirm_password){setPasswordError('New passwords do not match.');return}
+  setLoading(true)
+  try{
+   const session=await postJson<AuthSession>('/api/auth/password',{current_password:myPassword.current_password,new_password:myPassword.new_password})
+   setStoredAuth(session)
+   setMyPassword({current_password:'',new_password:'',confirm_password:''})
+   setPasswordNotice('Your password was changed. Your other active sessions were signed out.')
+  }catch(x){setPasswordError(String(x))}
   finally{setLoading(false)}
  }
 
@@ -307,10 +338,11 @@ export default function AdminPanel({setPage}:{setPage:(page:string)=>void}){
   <section className="adminGrid subPanel" id="login-users">
    <div>
     <div className="panelHead"><h2>Login Users</h2><small>{data.users.length} account(s)</small></div>
+    <p className="auditHint">Create accounts for the selected company. Company administrators can manage only their company; central admin can switch companies.</p>
     <form className="adminUserForm" onSubmit={createUser}>
      <label>Name<input value={userForm.display_name} onChange={e=>setUserForm({...userForm,display_name:e.target.value})} placeholder="Staff name" required /></label>
      <label>Username<input value={userForm.username} onChange={e=>setUserForm({...userForm,username:e.target.value})} placeholder="login id" required /></label>
-     <label>Password<input type="password" value={userForm.password} onChange={e=>setUserForm({...userForm,password:e.target.value})} placeholder="Set password" required /></label>
+     <label>Password<input type="password" minLength={12} autoComplete="new-password" value={userForm.password} onChange={e=>setUserForm({...userForm,password:e.target.value})} placeholder="At least 12 characters" required /></label>
      <label>Role<select value={userForm.role} onChange={e=>setUserForm({...userForm,role:e.target.value})}><option value="STAFF">Staff</option><option value="OPERATOR">Operator</option><option value="ACCOUNTS">Accounts</option><option value="ADMIN">Admin</option></select></label>
      <label className="adminUserActive"><input type="checkbox" checked={userForm.active} onChange={e=>setUserForm({...userForm,active:e.target.checked})}/>Active</label>
      <button className="primaryBtn" type="submit" disabled={loading}><UserPlus size={16}/>Create Login</button>
@@ -319,11 +351,25 @@ export default function AdminPanel({setPage}:{setPage:(page:string)=>void}){
     {userError&&<div className="errorBox">{userError}</div>}
     <div className="adminUsers">
      {data.users.map(user=><article key={user.id}>
-      <span><b>{user.display_name}</b><small>{user.username}</small></span>
+      <div className="adminUserIdentity"><b>{user.display_name}</b><small>{user.username}</small></div>
       <em>{prettyRole(user.role)}</em>
       <strong className={user.active?'':'inactive'}>{user.active?'Active':'Off'}</strong>
+      {user.id!==getStoredAuth()?.user.id&&<div className="adminPasswordReset">
+       <input aria-label={`Temporary password for ${user.display_name}`} type="password" minLength={12} autoComplete="new-password" placeholder="New password (12+ chars)" value={resetPasswords[user.id]||''} onChange={e=>setResetPasswords(current=>({...current,[user.id]:e.target.value}))}/>
+       <button type="button" className="secondaryBtn" disabled={loading||!(resetPasswords[user.id]||'')} onClick={()=>void resetUserPassword(user)}><LockKeyhole size={15}/>Reset</button>
+      </div>}
      </article>)}
     </div>
+    <section className="adminSelfPassword">
+     <div className="panelHead"><h3>Change My Admin Password</h3><small>Applies to your current admin login</small></div>
+     <form className="adminPasswordForm" onSubmit={changeMyPassword}>
+      <label>Current password<input type="password" autoComplete="current-password" value={myPassword.current_password} onChange={e=>setMyPassword({...myPassword,current_password:e.target.value})} required/></label>
+      <label>New password<input type="password" minLength={12} autoComplete="new-password" value={myPassword.new_password} onChange={e=>setMyPassword({...myPassword,new_password:e.target.value})} required/></label>
+      <label>Confirm new password<input type="password" minLength={12} autoComplete="new-password" value={myPassword.confirm_password} onChange={e=>setMyPassword({...myPassword,confirm_password:e.target.value})} required/></label>
+      <button type="submit" className="primaryBtn" disabled={loading}><LockKeyhole size={15}/>Change My Password</button>
+     </form>
+     {passwordNotice&&<div className="successBox">{passwordNotice}</div>}{passwordError&&<div className="errorBox">{passwordError}</div>}
+    </section>
    </div>
 
    <div>

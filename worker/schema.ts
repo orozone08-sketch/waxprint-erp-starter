@@ -32,6 +32,10 @@ export const schema = {
     "company_id": {
       "type": "number",
       "nullable": true
+    },
+    "session_version": {
+      "type": "number",
+      "nullable": false
     }
   },
   "customers": {

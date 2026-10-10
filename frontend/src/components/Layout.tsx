@@ -1,6 +1,6 @@
-import {ReactNode, useMemo, useState} from 'react'
-import { LayoutDashboard, Inbox, BriefcaseBusiness, Wrench, Layers3, Printer, CircleCheckBig, RefreshCcw, Scale, PackageCheck, Undo2, ReceiptIndianRupee, Boxes, WalletCards, Users, BarChart3, Settings, Search, Bell, ChevronDown, LogOut } from 'lucide-react'
-import {getJson, type AuthUser} from '../api'
+import {type FormEvent, ReactNode, useMemo, useState} from 'react'
+import { LayoutDashboard, Inbox, BriefcaseBusiness, Wrench, Layers3, Printer, CircleCheckBig, RefreshCcw, Scale, PackageCheck, Undo2, ReceiptIndianRupee, Boxes, WalletCards, Users, BarChart3, Settings, Search, Bell, ChevronDown, LogOut, LockKeyhole, X } from 'lucide-react'
+import {getJson, postJson, setStoredAuth, type AuthSession, type AuthUser} from '../api'
 import {canAccessPage, normalizePage, roleHomePage} from '../authz'
 import {Job} from '../types'
 
@@ -21,6 +21,10 @@ export default function Layout({page,setPage,children,user,onLogout,companyName}
  const[jobs,setJobs]=useState<Job[]>([])
  const[customers,setCustomers]=useState<Customer[]>([])
  const[messages,setMessages]=useState<InboxMessage[]>([])
+ const[passwordOpen,setPasswordOpen]=useState(false)
+ const[passwordForm,setPasswordForm]=useState({current_password:'',new_password:'',confirm_password:''})
+ const[passwordError,setPasswordError]=useState('')
+ const[passwordNotice,setPasswordNotice]=useState('')
  const visibleItems=items.filter(([id])=>canAccessPage(id,user.role))
  const loadSearchData=async()=>{
   if(searchLoaded||searchLoading)return
@@ -48,6 +52,17 @@ export default function Layout({page,setPage,children,user,onLogout,companyName}
  const runSearch=()=>{
   if(results[0])openResult(results[0].page)
  }
+ const changePassword=async(event:FormEvent)=>{
+  event.preventDefault();setPasswordError('');setPasswordNotice('')
+  if(passwordForm.new_password.length<12){setPasswordError('New password must be at least 12 characters.');return}
+  if(passwordForm.new_password!==passwordForm.confirm_password){setPasswordError('New passwords do not match.');return}
+  try{
+   const session=await postJson<AuthSession>('/api/auth/password',{current_password:passwordForm.current_password,new_password:passwordForm.new_password})
+   setStoredAuth(session)
+   setPasswordForm({current_password:'',new_password:'',confirm_password:''})
+   setPasswordNotice('Password changed. Other active sessions have been signed out.')
+  }catch(error){setPasswordError(String(error))}
+ }
  const isAdmin=['ADMIN','SUPER_ADMIN'].includes(user.role.toUpperCase())
  const userName=user.display_name||user.username
  const initials=userName.split(/\s+/).filter(Boolean).slice(0,2).map(part=>part[0]?.toUpperCase()).join('')||user.username.slice(0,2).toUpperCase()
@@ -74,11 +89,24 @@ export default function Layout({page,setPage,children,user,onLogout,companyName}
      <button className="iconBtn" type="button" onClick={()=>setPage('inbox')} aria-label="Open notifications inbox"><Bell size={18}/><i></i></button>
      {isAdmin&&<a className="userChip" href="/admin.html" aria-label="Open separate admin panel"><strong>{initials}</strong><span>{userName}<small>{pretty(user.role)} · {companyName||'All companies'}</small></span><ChevronDown size={15}/></a>}
      {!isAdmin&&<div className="userChip"><strong>{initials}</strong><span>{userName}<small>{pretty(user.role)} · {companyName||'Company workspace'}</small></span></div>}
+     <button className="iconBtn" type="button" onClick={()=>{setPasswordOpen(true);setPasswordError('');setPasswordNotice('')}} aria-label="Change password" title="Change password"><LockKeyhole size={17}/></button>
      <button className="iconBtn" type="button" onClick={onLogout} aria-label="Sign out" title="Sign out"><LogOut size={17}/></button>
     </div>
    </header>
    {children}
   </main>
+  {passwordOpen&&<div className="passwordModalBackdrop" onMouseDown={event=>{if(event.target===event.currentTarget)setPasswordOpen(false)}}>
+   <section className="passwordModal" role="dialog" aria-modal="true" aria-labelledby="change-password-title">
+    <header><div><small>Account security</small><h2 id="change-password-title">Change password</h2></div><button type="button" className="iconBtn" aria-label="Close" onClick={()=>setPasswordOpen(false)}><X size={17}/></button></header>
+    <form className="passwordModalForm" onSubmit={changePassword}>
+     <label>Current password<input type="password" autoComplete="current-password" value={passwordForm.current_password} onChange={event=>setPasswordForm({...passwordForm,current_password:event.target.value})} required/></label>
+     <label>New password<input type="password" minLength={12} autoComplete="new-password" value={passwordForm.new_password} onChange={event=>setPasswordForm({...passwordForm,new_password:event.target.value})} required/></label>
+     <label>Confirm new password<input type="password" minLength={12} autoComplete="new-password" value={passwordForm.confirm_password} onChange={event=>setPasswordForm({...passwordForm,confirm_password:event.target.value})} required/></label>
+     <button className="primaryBtn" type="submit"><LockKeyhole size={15}/>Save password</button>
+    </form>
+    {passwordNotice&&<div className="successBox">{passwordNotice}</div>}{passwordError&&<div className="errorBox">{passwordError}</div>}
+   </section>
+  </div>}
  </div>
 }
 

@@ -25,7 +25,7 @@ async function signingKey(secret: string) {
   return crypto.subtle.importKey('raw', enc.encode(secret), {name: 'HMAC', hash: 'SHA-256'}, false, ['sign', 'verify']);
 }
 export async function tokenFor(user: Row, secret: string, selectedCompanyId: number) {
-  const body = b64(enc.encode(JSON.stringify({uid: user.id, cid: selectedCompanyId, exp: Math.floor(Date.now()/1000) + 43200})));
+  const body = b64(enc.encode(JSON.stringify({uid: user.id, cid: selectedCompanyId, sv: Number(user.session_version ?? 1), exp: Math.floor(Date.now()/1000) + 43200})));
   const signature = await crypto.subtle.sign('HMAC', await signingKey(secret), enc.encode(body));
   return `${body}.${b64(new Uint8Array(signature))}`;
 }
@@ -35,14 +35,14 @@ export async function userFor(token: string | undefined, c: Ctx): Promise<Row | 
     const [body, signature, extra] = token.split('.');
     if (extra || !body || !signature || !await crypto.subtle.verify('HMAC', await signingKey(c.env.AUTH_SECRET), unb64(signature), enc.encode(body))) return null;
     const payload = JSON.parse(new TextDecoder().decode(unb64(body)));
-    if (!Number.isInteger(payload.uid) || !Number.isInteger(payload.cid) || payload.exp <= Date.now()/1000) return null;
+    if (!Number.isInteger(payload.uid) || !Number.isInteger(payload.cid) || !Number.isInteger(payload.sv) || payload.exp <= Date.now()/1000) return null;
     const user = await c.env.DB.prepare('SELECT * FROM app_users WHERE id=? AND active=1').bind(payload.uid).first<Row>();
-    if (!user || (user.role !== 'SUPER_ADMIN' && Number(user.company_id) !== payload.cid)) return null;
+    if (!user || Number(user.session_version ?? 1) !== payload.sv || (user.role !== 'SUPER_ADMIN' && Number(user.company_id) !== payload.cid)) return null;
     return {...user, active_company_id: payload.cid};
   } catch { return null; }
 }
 export function userPayload(user: Row) {
-  const { password_hash, ...publicUser } = user;
+  const { password_hash, session_version, ...publicUser } = user;
   return publicUser;
 }
 export function registerAuth(app: Hono<Env>) {
@@ -111,5 +111,36 @@ export function registerAuthRoutes(app: Hono<Env>) {
     const companyId = activeCompanyId(c);
     const user = await c.env.DB.prepare('INSERT INTO app_users(username,display_name,role,password_hash,active,company_id) VALUES(?,?,?,?,?,?) RETURNING *').bind(username, data.display_name.trim(), role, await hashPassword(data.password), data.active ?? true, companyId).first<Row>();
     return c.json(userPayload(user!));
+  });
+  app.post('/api/auth/users/:id/password', async c => {
+    requireRoles(c, 'ADMIN');
+    const targetId = Number(c.req.param('id'));
+    if (!Number.isInteger(targetId) || targetId < 1) fail(400, 'Invalid user ID');
+    const data = await c.req.json();
+    if (typeof data.password !== 'string' || data.password.length < 12 || data.password.length > 256) fail(400, 'Password must be 12–256 characters');
+    const target = await c.env.DB.prepare('SELECT id,username,company_id,role FROM app_users WHERE id=?').bind(targetId).first<Row>();
+    if (!target) fail(404, 'Login account not found');
+    const actor = c.get('user');
+    if (actor.role !== 'SUPER_ADMIN' && Number(target.company_id) !== activeCompanyId(c)) fail(403, 'You can only change passwords for your company');
+    if (actor.role !== 'SUPER_ADMIN' && target.role === 'SUPER_ADMIN') fail(403, 'You cannot change a central administrator password');
+    if (Number(actor.id) === Number(target.id)) fail(400, 'Use Change My Password and enter your current password');
+    await c.env.DB.prepare('UPDATE app_users SET password_hash=?,session_version=session_version+1 WHERE id=?')
+      .bind(await hashPassword(data.password), target.id).run();
+    return c.json({ok: true});
+  });
+  app.post('/api/auth/password', async c => {
+    const data = await c.req.json();
+    if (typeof data.current_password !== 'string' || typeof data.new_password !== 'string' || data.new_password.length < 12 || data.new_password.length > 256) fail(400, 'Enter your current password and a new password of 12–256 characters');
+    const actor = c.get('user');
+    const current = await c.env.DB.prepare('SELECT * FROM app_users WHERE id=? AND active=1').bind(actor.id).first<Row>();
+    if (!current || !await verifyPassword(data.current_password, current.password_hash)) fail(401, 'Current password is incorrect');
+    const updated = {...current, password_hash: await hashPassword(data.new_password), session_version: Number(current.session_version ?? 1) + 1};
+    await c.env.DB.prepare('UPDATE app_users SET password_hash=?,session_version=? WHERE id=?')
+      .bind(updated.password_hash, updated.session_version, actor.id).run();
+    const companyId = activeCompanyId(c);
+    const company = await c.env.DB.prepare('SELECT name FROM companies WHERE id=?').bind(companyId).first<Row>();
+    const token = await tokenFor(updated, c.env.AUTH_SECRET, companyId);
+    setCookie(c, 'wax_session', token, {httpOnly: true, secure: new URL(c.req.url).protocol === 'https:', sameSite: 'Strict', path: '/', maxAge: 43200});
+    return c.json({ok: true, token, user: userPayload(updated), active_company_id: companyId, active_company_name: company?.name});
   });
 }

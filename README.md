@@ -7,7 +7,7 @@ Production runs on **Hono + Cloudflare Workers + D1**, with React/Vite assets se
 - R2 is intentionally disabled until the account owner activates it. Upload/download endpoints return HTTP 503 with a clear explanation; all other modules remain available. No demo records or default passwords are deployed.
 - Gmail uses its HTTPS OAuth API. No IMAP daemon or separate server is required. Imports preserve the starter's inbox behavior: message metadata/body and customer matching, without changing the mailbox or automatically creating attachment jobs.
 - Employees sign in with their company, individual username, and password. Company data is stored in separate D1 databases. The existing records are assigned to Aditya International; new Sunmoon Technology records start in its separate database.
-- `/admin.html` requires an administrator login. The central super administrator can switch companies, create employee accounts for either company, and review changes from both companies. Company administrators can manage accounts and data within their own company only.
+- `/admin.html` requires an administrator login. The central super administrator can switch companies, create employee accounts for either company, reset their passwords, and review changes from both companies. Company administrators can manage accounts and data within their own company only. Every signed-in user can change their own password; password changes revoke older sessions. Passwords must contain at least 12 characters.
 
 ## Development and verification
 
