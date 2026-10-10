@@ -1,4 +1,6 @@
-export const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+// Production assets and API routes are served by the same Worker; use relative
+// URLs so local development settings never leak into the deployed bundle.
+export const API = import.meta.env.PROD ? '' : (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
 export type AppRole='ADMIN'|'ACCOUNTS'|'STAFF'|'OPERATOR'
 export type AuthUser={id:number;username:string;display_name:string;role:AppRole|string;active:boolean;created_at?:string}
