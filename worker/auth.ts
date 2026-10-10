@@ -96,8 +96,8 @@ export function registerAuthRoutes(app: Hono<Env>) {
     const companyId = activeCompanyId(c);
     const user = c.get('user');
     const statement = user.role === 'SUPER_ADMIN'
-      ? c.env.DB.prepare('SELECT * FROM app_users WHERE company_id=? OR role=? ORDER BY id DESC').bind(companyId, 'SUPER_ADMIN')
-      : c.env.DB.prepare('SELECT * FROM app_users WHERE company_id=? ORDER BY id DESC').bind(companyId);
+      ? c.env.DB.prepare('SELECT u.*,co.name AS company_name FROM app_users u LEFT JOIN companies co ON co.id=u.company_id ORDER BY u.id DESC')
+      : c.env.DB.prepare('SELECT u.*,co.name AS company_name FROM app_users u LEFT JOIN companies co ON co.id=u.company_id WHERE u.company_id=? ORDER BY u.id DESC').bind(companyId);
     return c.json((await statement.all<Row>()).results.map(userPayload));
   });
   app.post('/api/auth/users', async c => {
@@ -108,7 +108,11 @@ export function registerAuthRoutes(app: Hono<Env>) {
     if (!['ADMIN', 'ACCOUNTS', 'STAFF', 'OPERATOR'].includes(role)) fail(400, 'Invalid role');
     const username = data.username.trim().toLowerCase();
     if (await c.env.DB.prepare('SELECT id FROM app_users WHERE username=?').bind(username).first<Row>()) fail(400, 'Username already exists');
-    const companyId = activeCompanyId(c);
+    const actor = c.get('user');
+    const companyId = actor.role === 'SUPER_ADMIN' && data.company_id !== undefined ? Number(data.company_id) : activeCompanyId(c);
+    if (!Number.isInteger(companyId) || companyId < 1) fail(400, 'Choose a valid company');
+    const company = await c.env.DB.prepare('SELECT id FROM companies WHERE id=? AND active=1').bind(companyId).first<Row>();
+    if (!company) fail(400, 'Choose an active company');
     const user = await c.env.DB.prepare('INSERT INTO app_users(username,display_name,role,password_hash,active,company_id) VALUES(?,?,?,?,?,?) RETURNING *').bind(username, data.display_name.trim(), role, await hashPassword(data.password), data.active ?? true, companyId).first<Row>();
     return c.json(userPayload(user!));
   });

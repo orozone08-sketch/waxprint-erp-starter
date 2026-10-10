@@ -3,7 +3,7 @@
 export const API = import.meta.env.PROD ? '' : (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
 export type AppRole='SUPER_ADMIN'|'ADMIN'|'ACCOUNTS'|'STAFF'|'OPERATOR'
-export type AuthUser={id:number;username:string;display_name:string;role:AppRole|string;company_id:number|null;active:boolean;created_at?:string}
+export type AuthUser={id:number;username:string;display_name:string;role:AppRole|string;company_id:number|null;company_name?:string|null;active:boolean;created_at?:string}
 export type AuthSession={token:string;user:AuthUser;active_company_id:number;active_company_name?:string}
 
 const AUTH_KEY='waxprint.auth'

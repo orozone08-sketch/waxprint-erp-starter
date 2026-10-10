@@ -35,7 +35,7 @@ export default function AdminPanel({setPage}:{setPage:(page:string)=>void}){
  const[activeDatasetKey,setActiveDatasetKey]=useState(initialModule||'all_records')
  const[modulePageKey,setModulePageKey]=useState(initialModule)
  const[dataSearch,setDataSearch]=useState('')
- const[userForm,setUserForm]=useState({username:'',display_name:'',password:'',role:'STAFF',active:true})
+ const[userForm,setUserForm]=useState(()=>({username:'',display_name:'',password:'',role:'STAFF',active:true,company_id:getStoredAuth()?.active_company_id||1}))
  const[gmailForm,setGmailForm]=useState<GmailFormState>({enabled:true,user:'',mailbox:'INBOX',fetch_query:'is:unread',fetch_limit:'25'})
  const[gmailNotice,setGmailNotice]=useState('')
  const[gmailError,setGmailError]=useState('')
@@ -125,7 +125,7 @@ export default function AdminPanel({setPage}:{setPage:(page:string)=>void}){
   try{
    const created=await postJson<AuthUser>('/api/auth/users',userForm)
    setUserNotice(`${created.display_name} login created.`)
-   setUserForm({username:'',display_name:'',password:'',role:'STAFF',active:true})
+   setUserForm(current=>({...current,username:'',display_name:'',password:'',role:'STAFF',active:true}))
    await load()
   }catch(x){setUserError(String(x))}
   finally{setLoading(false)}
@@ -338,12 +338,13 @@ export default function AdminPanel({setPage}:{setPage:(page:string)=>void}){
   <section className="adminGrid subPanel" id="login-users">
    <div>
     <div className="panelHead"><h2>Login Users</h2><small>{data.users.length} account(s)</small></div>
-    <p className="auditHint">Create accounts for the selected company. Company administrators can manage only their company; central admin can switch companies.</p>
+    <p className="auditHint">Create a separate login for each person. Central admin can choose either company; company administrators can add accounts only for their own company.</p>
     <form className="adminUserForm" onSubmit={createUser}>
      <label>Name<input value={userForm.display_name} onChange={e=>setUserForm({...userForm,display_name:e.target.value})} placeholder="Staff name" required /></label>
      <label>Username<input value={userForm.username} onChange={e=>setUserForm({...userForm,username:e.target.value})} placeholder="login id" required /></label>
      <label>Password<input type="password" maxLength={256} autoComplete="new-password" value={userForm.password} onChange={e=>setUserForm({...userForm,password:e.target.value})} placeholder="Set password" required /></label>
      <label>Role<select value={userForm.role} onChange={e=>setUserForm({...userForm,role:e.target.value})}><option value="STAFF">Staff</option><option value="OPERATOR">Operator</option><option value="ACCOUNTS">Accounts</option><option value="ADMIN">Admin</option></select></label>
+     {getStoredAuth()?.user.role==='SUPER_ADMIN'?<label>Company<select value={userForm.company_id} onChange={e=>setUserForm({...userForm,company_id:Number(e.target.value)})}>{data.companies.map(company=><option key={company.id} value={company.id}>{company.name}</option>)}</select></label>:<label>Company<input value={data.companies.find(company=>company.id===activeCompanyId)?.name||'Your company'} readOnly/></label>}
      <label className="adminUserActive"><input type="checkbox" checked={userForm.active} onChange={e=>setUserForm({...userForm,active:e.target.checked})}/>Active</label>
      <button className="primaryBtn" type="submit" disabled={loading}><UserPlus size={16}/>Create Login</button>
     </form>
@@ -351,7 +352,7 @@ export default function AdminPanel({setPage}:{setPage:(page:string)=>void}){
     {userError&&<div className="errorBox">{userError}</div>}
     <div className="adminUsers">
      {data.users.map(user=><article key={user.id}>
-      <div className="adminUserIdentity"><b>{user.display_name}</b><small>{user.username}</small></div>
+      <div className="adminUserIdentity"><b>{user.display_name}</b><small>{user.username} · {user.company_name||'Central admin'}</small></div>
       <em>{prettyRole(user.role)}</em>
       <strong className={user.active?'':'inactive'}>{user.active?'Active':'Off'}</strong>
       {user.id!==getStoredAuth()?.user.id&&<div className="adminPasswordReset">
