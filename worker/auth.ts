@@ -3,7 +3,7 @@ import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { Env, Row, all, one, run, insert, requireRoles, fail } from './shared';
 
 const ALLOW_PUBLIC_ACCESS = true; // Temporary development mode; set false before production.
-const PUBLIC_USER: Row = {id: 0, username: 'public', display_name: 'WaxPrint Team', role: 'ADMIN', active: 1};
+const PUBLIC_USER: Row = {id: 0, username: 'public', display_name: 'WaxPrint Team', role: 'STAFF', active: 1};
 const enc = new TextEncoder();
 const hex = (bytes: ArrayBuffer) => [...new Uint8Array(bytes)].map(x => x.toString(16).padStart(2, '0')).join('');
 const b64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '');

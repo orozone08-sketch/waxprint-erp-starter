@@ -1,8 +1,8 @@
 import {FormEvent, useState} from 'react'
 import {LogIn, LockKeyhole} from 'lucide-react'
-import {type AuthSession, login} from '../api'
+import {clearStoredAuth, type AuthSession, login} from '../api'
 
-export default function Login({onLogin,title='WaxPrint ERP',subtitle='Sign in to continue'}:{onLogin:(session:AuthSession)=>void;title?:string;subtitle?:string}){
+export default function Login({onLogin,title='WaxPrint ERP',subtitle='Sign in to continue',usernameLabel='Username',requiredRole}:{onLogin:(session:AuthSession)=>void;title?:string;subtitle?:string;usernameLabel?:string;requiredRole?:string}){
  const[username,setUsername]=useState('')
  const[password,setPassword]=useState('')
  const[error,setError]=useState('')
@@ -12,7 +12,12 @@ export default function Login({onLogin,title='WaxPrint ERP',subtitle='Sign in to
   event.preventDefault()
   setLoading(true);setError('')
   try{
-   onLogin(await login(username,password))
+   const session=await login(username,password)
+   if(requiredRole&&session.user.role.toUpperCase()!==requiredRole.toUpperCase()){
+    clearStoredAuth()
+    throw new Error('This account does not have admin access.')
+   }
+   onLogin(session)
   }catch(x){
    setError(String(x))
   }finally{
@@ -27,7 +32,7 @@ export default function Login({onLogin,title='WaxPrint ERP',subtitle='Sign in to
     <span><b>{title}</b><small>{subtitle}</small></span>
    </div>
    <form className="loginForm" onSubmit={submit}>
-    <label>Username<input value={username} onChange={e=>setUsername(e.target.value)} autoComplete="username" autoFocus required /></label>
+    <label>{usernameLabel}<input value={username} onChange={e=>setUsername(e.target.value)} autoComplete="username" autoFocus required /></label>
     <label>Password<input type="password" value={password} onChange={e=>setPassword(e.target.value)} autoComplete="current-password" required /></label>
     {error&&<div className="errorBox"><LockKeyhole size={15}/>{error}</div>}
     <button className="primaryBtn" type="submit" disabled={loading}><LogIn size={16}/>{loading?'Signing in...':'Login'}</button>

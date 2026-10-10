@@ -6,7 +6,7 @@ Production runs on **Hono + Cloudflare Workers + D1**, with React/Vite assets se
 - Worker: `waxprint-erp`. Database: `waxprint-erp` (`e7a2d654-5471-4bb7-89b1-299ad45218e7`).
 - R2 is intentionally disabled until the account owner activates it. Upload/download endpoints return HTTP 503 with a clear explanation; all other modules remain available. No demo records or default passwords are deployed.
 - Gmail uses its HTTPS OAuth API. No IMAP daemon or separate server is required. Imports preserve the starter's inbox behavior: message metadata/body and customer matching, without changing the mailbox or automatically creating attachment jobs.
-- Temporary development mode: the ERP currently opens without a login. Set ALLOW_PUBLIC_ACCESS to false in worker/auth.ts before production to require the existing login flow again.
+- The regular ERP opens without a login in temporary development mode. The separate admin page at /admin.html requires an administrator Login ID and password and provides the all-data panel. Set ALLOW_PUBLIC_ACCESS to false in worker/auth.ts before production to require login across the ERP.
 
 ## Development and verification
 

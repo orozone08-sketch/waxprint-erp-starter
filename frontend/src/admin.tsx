@@ -1,12 +1,13 @@
-import React from 'react'
+import React, {useEffect, useState} from 'react'
 import ReactDOM from 'react-dom/client'
-import {ArrowLeft, ExternalLink} from 'lucide-react'
+import {ArrowLeft, ExternalLink, LogOut} from 'lucide-react'
 import AdminPanel from './pages/AdminPanel'
-import {PUBLIC_SESSION} from './api'
+import Login from './pages/Login'
+import {clearStoredAuth, getJson, getStoredAuth, logout as logoutSession, setStoredAuth, type AuthSession, type AuthUser} from './api'
 import './styles.css'
 
 function goToMain(page:string){
- window.location.href=`/?page=${encodeURIComponent(page)}`
+ window.location.href='/?page='+encodeURIComponent(page)
 }
 
 function scrollAdmin(id:string){
@@ -18,16 +19,41 @@ function openAdminSection(id:string){
  if(url.searchParams.has('module')){
   url.searchParams.delete('module')
   url.hash=id
-  window.location.href=`${url.pathname}${url.search}${url.hash}`
+  window.location.href=url.pathname+url.search+url.hash
   return
  }
  scrollAdmin(id)
 }
 
 function AdminApp(){
- const auth=PUBLIC_SESSION
- const isAdmin=auth.user.role.toUpperCase()==='ADMIN'
- if(!isAdmin)return <main className="loginPage"><section className="loginPanel">Admin access required. Redirecting to ERP...</section></main>
+ const[auth,setAuth]=useState<AuthSession|null>(null)
+ const[checking,setChecking]=useState(()=>Boolean(getStoredAuth()))
+
+ useEffect(()=>{
+  const stored=getStoredAuth()
+  if(!stored){setChecking(false);return}
+  getJson<AuthUser>('/api/auth/me').then(user=>{
+   if(user.role.toUpperCase()!=='ADMIN'){
+    clearStoredAuth()
+    setAuth(null)
+    return
+   }
+   const session={...stored,user}
+   setStoredAuth(session)
+   setAuth(session)
+  }).catch(()=>{
+   clearStoredAuth()
+   setAuth(null)
+  }).finally(()=>setChecking(false))
+ },[])
+
+ const logout=async()=>{
+  try{await logoutSession()}catch(error){window.alert('Logout failed: '+String(error));return}
+  setAuth(null)
+ }
+
+ if(checking)return <main className="loginPage"><section className="loginPanel">Checking admin session...</section></main>
+ if(!auth)return <Login onLogin={setAuth} title="WaxPrint Admin" subtitle="Sign in with an administrator account" usernameLabel="Login ID" requiredRole="ADMIN" />
 
  return <div className="adminShell">
   <aside className="adminSideNav">
@@ -39,8 +65,9 @@ function AdminApp(){
     <div id="admin-data-modules-slot" className="adminSideDataSlot"></div>
    </div>
    <div className="adminSideActions">
-    <button type="button" onClick={()=>goToMain(isAdmin?'dashboard':'inbox')}><ArrowLeft size={16}/>ERP</button>
-    {isAdmin&&<button type="button" onClick={()=>goToMain('settings')}><ExternalLink size={16}/>Settings</button>}
+    <button type="button" onClick={()=>goToMain('inbox')}><ArrowLeft size={16}/>ERP</button>
+    <button type="button" onClick={()=>goToMain('settings')}><ExternalLink size={16}/>Settings</button>
+    <button type="button" onClick={logout}><LogOut size={16}/>Logout</button>
    </div>
   </aside>
   <main className="adminStandalone">
@@ -50,8 +77,9 @@ function AdminApp(){
      <h1>Control Panel</h1>
     </div>
     <div className="adminStandaloneActions">
-     <button type="button" className="secondaryBtn" onClick={()=>goToMain(isAdmin?'dashboard':'inbox')}><ArrowLeft size={16}/>ERP</button>
-     {isAdmin&&<button type="button" className="primaryBtn" onClick={()=>goToMain('settings')}><ExternalLink size={16}/>Settings</button>}
+     <button type="button" className="secondaryBtn" onClick={()=>goToMain('inbox')}><ArrowLeft size={16}/>ERP</button>
+     <button type="button" className="primaryBtn" onClick={()=>goToMain('settings')}><ExternalLink size={16}/>Settings</button>
+     <button type="button" className="secondaryBtn" onClick={logout}><LogOut size={16}/>Logout</button>
     </div>
    </header>
    <AdminPanel setPage={goToMain}/>

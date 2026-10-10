@@ -4,7 +4,7 @@ export type AppRole='ADMIN'|'ACCOUNTS'|'STAFF'|'OPERATOR'
 export type AuthUser={id:number;username:string;display_name:string;role:AppRole|string;active:boolean;created_at?:string}
 export type AuthSession={token:string;user:AuthUser}
 
-export const PUBLIC_SESSION:AuthSession={token:'',user:{id:0,username:'public',display_name:'WaxPrint Team',role:'ADMIN',active:true}}
+export const PUBLIC_SESSION:AuthSession={token:'',user:{id:0,username:'public',display_name:'WaxPrint Team',role:'STAFF',active:true}}
 
 const AUTH_KEY='waxprint.auth'
 
