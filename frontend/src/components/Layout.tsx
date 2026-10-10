@@ -72,9 +72,7 @@ export default function Layout({page,setPage,children,user}:{page:string;setPage
     </div>
     <div className="topbarActions">
      <button className="iconBtn" type="button" onClick={()=>setPage('inbox')} aria-label="Open notifications inbox"><Bell size={18}/><i></i></button>
-     {isAdmin?
-      <a className="userChip" href="/admin.html" aria-label="Open separate admin panel"><strong>{initials}</strong><span>{userName}<small>{pretty(user.role)}</small></span><ChevronDown size={15}/></a>:
-      <a className="userChip" href="/admin.html" aria-label="Admin login"><strong>A</strong><span>Admin Login<small>Separate access</small></span><ChevronDown size={15}/></a>}
+     {isAdmin&&<a className="userChip" href="/admin.html" aria-label="Open separate admin panel"><strong>{initials}</strong><span>{userName}<small>{pretty(user.role)}</small></span><ChevronDown size={15}/></a>}
     </div>
    </header>
    {children}
