@@ -68,7 +68,6 @@ function registerGmail(app:Hono<Env>) {
  app.post('/api/integrations/gmail/push',async c=>{const payload=await body(c);await insert(c,'audit_logs',{module:'gmail',action:'PUSH_RECEIVED',details:JSON.stringify(payload).slice(0,2000),user_name:'gmail'});return c.json({ok:true});});
  app.post('/api/integrations/gmail/reconcile',async c=>{
   requireRoles(c,'ADMIN');
-  if(!c.env.FILES)throw fail(503,'Persistent file storage is not enabled. Ask an administrator to activate R2 before importing Gmail attachments.');
   const settings=await gmailStatus(c),token=await gmailToken(c);
   const list=await gmailFetch(c,'messages?'+new URLSearchParams({q:settings.fetch_query,labelIds:settings.mailbox,maxResults:String(settings.fetch_limit)}),token);
   let imported=0,skipped_existing=0,attachments_imported=0;const errors:string[]=[];
@@ -78,7 +77,8 @@ function registerGmail(app:Hono<Env>) {
   for(const ref of list.messages??[]){
    try {
     const external_id='gmail:'+ref.id;
-    let inbox=await one(c,'SELECT id FROM inbox_messages WHERE external_message_id=?',external_id) as Data|null;
+    let inbox=await one(c,'SELECT id,attachments_archived FROM inbox_messages WHERE external_message_id=?',external_id) as Data|null;
+    if(inbox&&inbox.attachments_archived){skipped_existing++;continue;}
     const msg=await gmailFetch(c,`messages/${ref.id}?format=full`,token);
     if(!inbox){
      const headers=msg.payload?.headers??[],header=(key:string)=>headers.find((h:Data)=>h.name.toLowerCase()===key)?.value??'';
@@ -93,6 +93,7 @@ function registerGmail(app:Hono<Env>) {
     async function saveParts(part:Data,path:string){
      const filename=typeof part.filename==='string'?part.filename.trim():'';
      if(filename&&(part.body?.attachmentId||part.body?.data)){
+      if(!c.env.FILES)throw new Error('Persistent file storage is not enabled. Activate R2 before importing Gmail attachments; no copy of this attachment was saved.');
       const partKey=String(part.partId??path);
       const exists=await one(c,'SELECT id FROM inbox_attachments WHERE inbox_message_id=? AND gmail_part_key=?',inbox!.id,partKey);
       if(!exists){
@@ -113,9 +114,10 @@ function registerGmail(app:Hono<Env>) {
      for(let i=0;i<(part.parts??[]).length;i++)await saveParts(part.parts[i],`${path}.${i}`);
     }
     await saveParts(msg.payload??{},'0');
+    await run(c,'UPDATE inbox_messages SET attachments_archived=1 WHERE id=?',inbox!.id);
    }catch(e){errors.push(`Message ${ref.id}: ${e instanceof Error?e.message:'import failed'}`);}
   }
-  const message=`Imported ${imported} Gmail message(s), saved ${attachments_imported} file(s), skipped ${skipped_existing} existing message(s).`;
+  const message=`Imported ${imported} Gmail message(s), saved ${attachments_imported} file(s), skipped ${skipped_existing} existing message(s).${errors.length?` ${errors[0]}`:''}`;
   return c.json({ok:errors.length===0,fetched:list.messages?.length??0,imported,skipped_existing,attachments_imported,errors,message});
  });
 }

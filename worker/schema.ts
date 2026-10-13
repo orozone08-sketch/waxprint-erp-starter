@@ -202,7 +202,8 @@ export const schema = {
     "job_id": {
       "type": "number",
       "nullable": true
-    }
+    },
+    "attachments_archived": { "type": "boolean", "nullable": false }
   },
   "inbox_attachments": {
     "id": { "type": "number", "nullable": false },

@@ -6,7 +6,7 @@ type Customer={id:number;code:string;name:string;email:string|null;whatsapp:stri
 type Supplier={id:number;code:string;name:string;gst_number:string|null;contact:string|null}
 type Machine={id:number;code:string;name:string;model:string|null;serial_number:string|null;status:string}
 type Material={id:number;code:string;name:string;unit:string;stock:number;minimum_stock:number}
-type Integrations={gmail:{enabled:boolean;configured:boolean;mode:string;user:string;mailbox:string;fetch_query:string;fetch_limit:number;archive_label:string};magics:{agent_token_configured:boolean;workstation_default:string;local_agent_folder:string;queue_endpoint:string}}
+type Integrations={gmail:{enabled:boolean;configured:boolean;storage_enabled:boolean;mode:string;user:string;mailbox:string;fetch_query:string;fetch_limit:number;archive_label:string};magics:{agent_token_configured:boolean;workstation_default:string;local_agent_folder:string;queue_endpoint:string}}
 type GmailSave={ok:boolean;message:string;gmail:Integrations['gmail']}
 type GmailTest={ok:boolean;message:string;gmail:Integrations['gmail']}
 
@@ -107,7 +107,7 @@ export default function SettingsPage(){
    <Stat icon={<Store size={18}/>} label="Suppliers" value={suppliers.length} onClick={()=>jumpTo('suppliers',suppliersRef)}/>
    <Stat icon={<Printer size={18}/>} label="Machines" value={machines.length} onClick={()=>jumpTo('machines',machinesRef)}/>
    <Stat icon={<Boxes size={18}/>} label="Materials" value={materials.length} onClick={()=>jumpTo('materials',materialsRef)}/>
-   <Stat icon={<CheckCircle2 size={18}/>} label="Gmail" value={integrations?.gmail.configured?'Saved':'Setup'} onClick={()=>jumpTo('gmail',gmailRef)}/>
+   <Stat icon={<CheckCircle2 size={18}/>} label="Gmail" value={integrations?.gmail.configured?(integrations.gmail.storage_enabled?'Saved':'Storage needed'):'Setup'} onClick={()=>jumpTo('gmail',gmailRef)}/>
   </div>
 
   {notice&&<div className="successBox">{notice}</div>}
@@ -118,6 +118,7 @@ export default function SettingsPage(){
     <div className="integrationRows">
      <Info label="Enabled" value={integrations?.gmail.enabled?'Yes':'No'}/>
      <Info label="Configured" value={integrations?.gmail.configured?'Yes':'No'}/>
+     <Info label="Attachment storage" value={integrations?.gmail.storage_enabled?'R2 ready':'Enable R2 first'}/>
      <Info label="Mode" value={integrations?.gmail.mode||'none'}/>
      <Info label="Account" value={integrations?.gmail.user||'Not set'}/>
      <Info label="Gmail label" value={integrations?.gmail.mailbox||'INBOX'}/>

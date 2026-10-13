@@ -1,3 +1,5 @@
+ALTER TABLE "inbox_messages" ADD COLUMN "attachments_archived" INTEGER NOT NULL DEFAULT 0;
+
 CREATE TABLE "inbox_attachments" (
   "id" INTEGER PRIMARY KEY AUTOINCREMENT,
   "inbox_message_id" INTEGER NOT NULL REFERENCES "inbox_messages"("id") ON DELETE CASCADE,
