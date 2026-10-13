@@ -89,7 +89,7 @@ export default function SettingsPage(){
   })
   await postJson('/api/inbox/gmail/clear',{})
   setIntegrations(current=>current?{...current,gmail:saved.gmail}:current)
- },'Gmail intake disabled and imported Gmail rows cleared. OAuth connection remains managed by your administrator.').then(()=>setGmailForm({enabled:true,user:'',mailbox:'INBOX',fetch_query:'is:unread',fetch_limit:'25'}))
+ },'Gmail intake disabled; imported messages and their saved ERP attachments were deleted. OAuth credentials remain managed by your administrator.').then(()=>setGmailForm({enabled:true,user:'',mailbox:'INBOX',fetch_query:'is:unread',fetch_limit:'25'}))
  const jumpTo=(section:string, ref:RefObject<HTMLElement|null>)=>{
   setHighlight(section)
   ref.current?.scrollIntoView({behavior:'smooth',block:'start'})
@@ -132,7 +132,7 @@ export default function SettingsPage(){
      <div className="settingsActions">
       <button className="primaryBtn" type="submit" disabled={loading||!gmailForm.user}><Save size={16}/>Save Gmail</button>
       <button className="secondaryBtn" type="button" onClick={testGmail} disabled={loading||!integrations?.gmail.configured}><CheckCircle2 size={16}/>Test</button>
-      <button className="secondaryBtn" type="button" onClick={removeGmail} disabled={loading||!integrations?.gmail.configured}><Trash2 size={16}/>Disable and clear imports</button>
+      <button className="secondaryBtn" type="button" onClick={removeGmail} disabled={loading||!integrations?.gmail.configured}><Trash2 size={16}/>Disable Gmail and delete ERP copies</button>
      </div>
     </form>
    </MasterPanel>

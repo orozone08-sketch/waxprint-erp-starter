@@ -1,5 +1,5 @@
 import { Hono, type Context } from 'hono';
-import { Env, all, one, run, insert, update, code, fail, requireRoles, database } from './shared';
+import { Env, all, one, run, insert, update, code, fail, requireRoles, database, activeCompanyId } from './shared';
 
 type C = Context<Env>;
 type Data = Record<string, any>;
@@ -57,7 +57,7 @@ export function registerFinance(app:Hono<Env>) {
  registerGmail(app);
 }
 
-async function gmailStatus(c:C) {const settings=await one(c,"SELECT value FROM integration_settings WHERE key='gmail'") as Data|null;const d=settings?JSON.parse(settings.value):{};const env=c.env as any;return {enabled:d.enabled??false,configured:!!(env.GMAIL_CLIENT_ID&&env.GMAIL_CLIENT_SECRET&&env.GMAIL_REFRESH_TOKEN),mode:'oauth',user:d.user??'',mailbox:d.mailbox??'INBOX',fetch_query:d.fetch_query??'is:unread',fetch_limit:d.fetch_limit??25,pubsub_topic:env.GMAIL_PUBSUB_TOPIC??null,archive_label:null};}
+async function gmailStatus(c:C) {const settings=await one(c,"SELECT value FROM integration_settings WHERE key='gmail'") as Data|null;const d=settings?JSON.parse(settings.value):{};const env=c.env as any;return {enabled:d.enabled??false,configured:!!(env.GMAIL_CLIENT_ID&&env.GMAIL_CLIENT_SECRET&&env.GMAIL_REFRESH_TOKEN),storage_enabled:!!env.FILES,mode:'oauth',user:d.user??'',mailbox:d.mailbox??'INBOX',fetch_query:d.fetch_query??'is:unread',fetch_limit:d.fetch_limit??25,pubsub_topic:env.GMAIL_PUBSUB_TOPIC??null,archive_label:null};}
 async function gmailToken(c:C) {const current=await gmailStatus(c);if(!current.enabled)throw fail(400,'Gmail integration is disabled');if(!current.configured)throw fail(400,'Set GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET and GMAIL_REFRESH_TOKEN as Worker secrets to connect Gmail');const e=c.env as any;const response=await fetch('https://oauth2.googleapis.com/token',{method:'POST',body:new URLSearchParams({client_id:e.GMAIL_CLIENT_ID,client_secret:e.GMAIL_CLIENT_SECRET,refresh_token:e.GMAIL_REFRESH_TOKEN,grant_type:'refresh_token'})});const data=await response.json() as Data;if(!response.ok||!data.access_token)throw fail(502,'Google rejected the configured OAuth credentials');return data.access_token;}
 async function gmailFetch(c:C,path:string,token:string) {const response=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/'+path,{headers:{Authorization:`Bearer ${token}`}});if(!response.ok)throw fail(502,`Gmail API returned ${response.status}`);return await response.json() as Data;}
 function registerGmail(app:Hono<Env>) {
@@ -66,5 +66,56 @@ function registerGmail(app:Hono<Env>) {
  app.post('/api/settings/gmail',async c=>{requireRoles(c,'ADMIN');const d=await body(c);if(d.app_password?.trim())throw fail(400,'Cloudflare uses Gmail OAuth API. Configure OAuth Worker secrets; Gmail app passwords are not supported.');const enabled=bool(d,'enabled',true),user=enabled?text(d,'user'):d.user??'',fetch_limit=num(d,'fetch_limit',25,true);if(!Number.isInteger(fetch_limit)||fetch_limit>100)throw fail(422,'fetch_limit must be 1 to 100');const value=JSON.stringify({enabled,user,mailbox:text(d,'mailbox','INBOX'),fetch_query:d.fetch_query==='UNSEEN'?'is:unread':text(d,'fetch_query','is:unread'),fetch_limit});await run(c,"INSERT INTO integration_settings(key,value) VALUES('gmail',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",value);return c.json({ok:true,message:'Gmail settings saved. OAuth credentials are managed as Worker secrets.',gmail:await gmailStatus(c)});});
  app.post('/api/settings/gmail/test',async c=>{requireRoles(c,'ADMIN');const token=await gmailToken(c);const profile=await gmailFetch(c,'profile',token);return c.json({ok:true,message:`Gmail connected to ${profile.emailAddress}`,gmail:await gmailStatus(c)});});
  app.post('/api/integrations/gmail/push',async c=>{const payload=await body(c);await insert(c,'audit_logs',{module:'gmail',action:'PUSH_RECEIVED',details:JSON.stringify(payload).slice(0,2000),user_name:'gmail'});return c.json({ok:true});});
- app.post('/api/integrations/gmail/reconcile',async c=>{requireRoles(c,'ADMIN');const settings=await gmailStatus(c),token=await gmailToken(c);const list=await gmailFetch(c,'messages?'+new URLSearchParams({q:settings.fetch_query,labelIds:settings.mailbox,maxResults:String(settings.fetch_limit)}),token);let imported=0,skipped_existing=0;const errors:string[]=[];for(const ref of list.messages??[]){try {const external_id='gmail:'+ref.id;if(await one(c,'SELECT id FROM inbox_messages WHERE external_message_id=?',external_id)){skipped_existing++;continue;}const msg=await gmailFetch(c,`messages/${ref.id}?format=full`,token);const headers=msg.payload?.headers??[],header=(key:string)=>headers.find((h:Data)=>h.name.toLowerCase()===key)?.value??'';const sender=header('from'),email=sender.match(/<([^>]+)>/)?.[1]??sender;const customer=await one(c,'SELECT id FROM customers WHERE lower(email)=?',email.toLowerCase()) as Data|null;const bodyParts:string[]=[];function visit(part:Data){if(part.mimeType==='text/plain'&&part.body?.data){const encoded=part.body.data.replace(/-/g,'+').replace(/_/g,'/');bodyParts.push(new TextDecoder().decode(Uint8Array.from(atob(encoded),x=>x.charCodeAt(0))));}for(const child of part.parts??[])visit(child);}visit(msg.payload??{});await insert(c,'inbox_messages',{source:'gmail',external_message_id:external_id,sender,subject:header('subject')||'(no subject)',body:(bodyParts.join('\n\n')||msg.snippet||'').slice(0,10000),received_at:new Date(Number(msg.internalDate)).toISOString(),archived:false,status:customer?'MATCHED':'RECEIVED',customer_id:customer?.id??null});imported++;}catch{errors.push(`Failed to import message ${ref.id}`);}}return c.json({ok:errors.length===0,fetched:list.messages?.length??0,imported,skipped_existing,errors,message:`Imported ${imported} Gmail message(s), skipped ${skipped_existing}.`});});
+ app.post('/api/integrations/gmail/reconcile',async c=>{
+  requireRoles(c,'ADMIN');
+  if(!c.env.FILES)throw fail(503,'Persistent file storage is not enabled. Ask an administrator to activate R2 before importing Gmail attachments.');
+  const settings=await gmailStatus(c),token=await gmailToken(c);
+  const list=await gmailFetch(c,'messages?'+new URLSearchParams({q:settings.fetch_query,labelIds:settings.mailbox,maxResults:String(settings.fetch_limit)}),token);
+  let imported=0,skipped_existing=0,attachments_imported=0;const errors:string[]=[];
+  const fromUrl=(data:string)=>{const normalized=data.replace(/-/g,'+').replace(/_/g,'/');const raw=atob(normalized);const bytes=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);return bytes;};
+  const mimeType=(value:unknown)=>typeof value==='string'&&/^[\w!#$&^_.+-]+\/[\w!#$&^_.+-]+$/.test(value)?value:'application/octet-stream';
+  const digest=(bytes:Uint8Array)=>crypto.subtle.digest('SHA-256',bytes).then(hash=>Array.from(new Uint8Array(hash)).map(v=>v.toString(16).padStart(2,'0')).join(''));
+  for(const ref of list.messages??[]){
+   try {
+    const external_id='gmail:'+ref.id;
+    let inbox=await one(c,'SELECT id FROM inbox_messages WHERE external_message_id=?',external_id) as Data|null;
+    const msg=await gmailFetch(c,`messages/${ref.id}?format=full`,token);
+    if(!inbox){
+     const headers=msg.payload?.headers??[],header=(key:string)=>headers.find((h:Data)=>h.name.toLowerCase()===key)?.value??'';
+     const sender=header('from'),email=sender.match(/<([^>]+)>/)?.[1]??sender;
+     const customer=await one(c,'SELECT id FROM customers WHERE lower(email)=?',email.toLowerCase()) as Data|null;
+     const bodyParts:string[]=[];
+     function readBody(part:Data){if(part.mimeType==='text/plain'&&part.body?.data)bodyParts.push(new TextDecoder().decode(fromUrl(part.body.data)));for(const child of part.parts??[])readBody(child);}
+     readBody(msg.payload??{});
+     inbox=await insert(c,'inbox_messages',{source:'gmail',external_message_id:external_id,sender,subject:header('subject')||'(no subject)',body:(bodyParts.join('\n\n')||msg.snippet||'').slice(0,10000),received_at:new Date(Number(msg.internalDate)).toISOString(),archived:false,status:customer?'MATCHED':'RECEIVED',customer_id:customer?.id??null});
+     imported++;
+    }else skipped_existing++;
+    async function saveParts(part:Data,path:string){
+     const filename=typeof part.filename==='string'?part.filename.trim():'';
+     if(filename&&(part.body?.attachmentId||part.body?.data)){
+      const partKey=String(part.partId??path);
+      const exists=await one(c,'SELECT id FROM inbox_attachments WHERE inbox_message_id=? AND gmail_part_key=?',inbox!.id,partKey);
+      if(!exists){
+       let bytes:Uint8Array;
+       if(part.body?.attachmentId){const data=await gmailFetch(c,`messages/${ref.id}/attachments/${part.body.attachmentId}`,token);bytes=fromUrl(data.data??'');}
+       else bytes=fromUrl(part.body.data);
+       if(!bytes.byteLength)throw new Error(`Attachment ${filename} is empty`);
+       if(bytes.byteLength>25*1024*1024)throw new Error(`Attachment ${filename} exceeds Gmail's 25 MB attachment limit`);
+       const safeName=filename.split(/[\\/]/).pop()?.replace(/[\\r\\n\\0]/g,'_').slice(0,240)||'attachment';
+       const key=`gmail/${activeCompanyId(c)}/${inbox!.id}/${crypto.randomUUID()}/${safeName}`;
+       const sha=await digest(bytes);
+       const type=mimeType(part.mimeType);
+       await c.env.FILES!.put(key,bytes,{httpMetadata:{contentType:type}});
+       try{await insert(c,'inbox_attachments',{inbox_message_id:inbox!.id,filename:safeName,mime_type:type,size_bytes:bytes.byteLength,sha256:sha,storage_key:key,gmail_part_key:partKey});attachments_imported++;}
+       catch(e){await c.env.FILES!.delete(key);throw e;}
+      }
+     }
+     for(let i=0;i<(part.parts??[]).length;i++)await saveParts(part.parts[i],`${path}.${i}`);
+    }
+    await saveParts(msg.payload??{},'0');
+   }catch(e){errors.push(`Message ${ref.id}: ${e instanceof Error?e.message:'import failed'}`);}
+  }
+  const message=`Imported ${imported} Gmail message(s), saved ${attachments_imported} file(s), skipped ${skipped_existing} existing message(s).`;
+  return c.json({ok:errors.length===0,fetched:list.messages?.length??0,imported,skipped_existing,attachments_imported,errors,message});
+ });
 }

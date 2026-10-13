@@ -204,6 +204,17 @@ export const schema = {
       "nullable": true
     }
   },
+  "inbox_attachments": {
+    "id": { "type": "number", "nullable": false },
+    "inbox_message_id": { "type": "number", "nullable": false },
+    "filename": { "type": "string", "nullable": false },
+    "mime_type": { "type": "string", "nullable": false },
+    "size_bytes": { "type": "number", "nullable": false },
+    "sha256": { "type": "string", "nullable": false },
+    "storage_key": { "type": "string", "nullable": false },
+    "gmail_part_key": { "type": "string", "nullable": false },
+    "created_at": { "type": "string", "nullable": false }
+  },
   "jobs": {
     "id": {
       "type": "number",

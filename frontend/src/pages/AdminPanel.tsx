@@ -212,7 +212,7 @@ export default function AdminPanel({setPage}:{setPage:(page:string)=>void}){
    })
    await postJson('/api/inbox/gmail/clear',{})
    updateGmailState(saved.gmail)
-   setGmailNotice('Gmail intake disabled and imported Gmail rows cleared. OAuth connection remains managed by your administrator.')
+   setGmailNotice('Gmail intake disabled; imported messages and their saved ERP attachments were deleted. OAuth credentials remain managed by your administrator.')
    setGmailForm({enabled:true,user:'',mailbox:'INBOX',fetch_query:'is:unread',fetch_limit:'25'})
    await load()
   }catch(x){setGmailError(String(x))}
@@ -494,7 +494,7 @@ function GmailAdminSetup({gmail,form,setForm,notice,error,loading,onSave,onTest,
    <div className="settingsActions">
     <button className="primaryBtn" type="submit" disabled={loading||!form.user}><Save size={16}/>Save Gmail</button>
     <button className="secondaryBtn" type="button" onClick={onTest} disabled={loading||!gmail.configured}><CheckCircle2 size={16}/>Test</button>
-   <button className="secondaryBtn" type="button" onClick={onRemove} disabled={loading||!gmail.configured}><Trash2 size={16}/>Disable and clear imports</button>
+   <button className="secondaryBtn" type="button" onClick={onRemove} disabled={loading||!gmail.configured}><Trash2 size={16}/>Disable Gmail and delete ERP copies</button>
    </div>
   </form>
   {notice&&<div className="successBox">{notice}</div>}

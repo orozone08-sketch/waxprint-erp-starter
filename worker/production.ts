@@ -101,8 +101,28 @@ export function registerProduction(app: Hono<Env>) {
   app.get('/api/dispatches/:dispatch_id/packing-photo', async c => { const d = await get(c, 'dispatches', c.req.param('dispatch_id'), 'Dispatch'); if (!d.packing_photo_path) fail(404, 'Packing photo not found'); return download(c, d.packing_photo_path, d.packing_photo_name || 'packing-photo') })
   app.post('/api/dispatches/:dispatch_id/packing-photo', async c => { const d = await get(c, 'dispatches', c.req.param('dispatch_id'), 'Dispatch'); const j = await get(c, 'jobs', d.job_id, 'Job'); const b = await c.req.parseBody(); const f = await store(c, b.packing_photo, j, 'packing', true); try { await update(c, 'dispatches', d.id, { packing_photo_path: f.key, packing_photo_name: f.name }) } catch (e) { await files(c).delete(f.key); throw e } if (d.packing_photo_path) await files(c).delete(d.packing_photo_path); return c.json({ id: d.id, number: d.number, packing_photo_name: f.name, packing_photo_url: `/api/dispatches/${d.id}/packing-photo` }) })
   app.post('/api/returns', async c => { const b = await body(c); const j = await get(c, 'jobs', b.job_id, 'Job'); const f = await get(c, 'job_files', b.job_file_id, 'File'); if (f.job_id !== j.id) fail(422, 'File does not belong to this job'); if (b.dispatch_id != null) { const d = await get(c, 'dispatches', b.dispatch_id, 'Dispatch'); if (d.job_id !== j.id) fail(422, 'Dispatch does not belong to this job') } const number = code('CR'); const reshoot = boolean(b.create_reshoot, true) ? code('RS') : null; const values = { job_id: j.id, job_file_id: f.id, quantity: integer(b.quantity ?? 1, 'Quantity'), responsibility: b.responsibility ?? 'UNKNOWN', chargeable: boolean(b.chargeable), status: 'OPEN' }; const complaint = text(b.complaint, 'Complaint'); const statements = [add(c, 'customer_returns', { ...values, number, dispatch_id: b.dispatch_id ?? null, complaint }), set(c, 'jobs', j.id, { status: 'CUSTOMER_RETURN' })]; if (reshoot) statements.push(add(c, 'reshoot_tickets', { ...values, number: reshoot, source: 'CUSTOMER_RETURN', reason: complaint })); await database(c).batch(statements); return c.json({ return_no: number, reshoot }) })
-  app.get('/api/inbox', async c => c.json((await all(c, 'SELECT id,source,sender,subject,received_at,archived,status,customer_id,job_id FROM inbox_messages ORDER BY id DESC')).map((m: Row) => ({ ...m, archived: !!m.archived }))))
-  app.post('/api/inbox/gmail/clear', async c => { requireRoles(c, 'ADMIN'); const result = await run(c, "DELETE FROM inbox_messages WHERE source='gmail'"); return c.json({ ok: true, deleted: result.meta.changes }) })
+  app.get('/api/inbox', async c => {
+    const messages = await all(c, 'SELECT id,source,sender,subject,received_at,archived,status,customer_id,job_id FROM inbox_messages ORDER BY id DESC')
+    return c.json(await Promise.all(messages.map(async (m: Row) => ({ ...m, archived: !!m.archived, attachments: await all(c, 'SELECT id,filename,mime_type,size_bytes,sha256,created_at FROM inbox_attachments WHERE inbox_message_id=? ORDER BY id', m.id) }))))
+  })
+  app.get('/api/inbox/attachments/:attachment_id/download', async c => {
+    const attachment = await one(c, 'SELECT filename,mime_type,storage_key FROM inbox_attachments WHERE id=?', integer(c.req.param('attachment_id'), 'Attachment id')) as Row
+    if (!attachment) fail(404, 'Attachment not found')
+    const object = await files(c).get(attachment.storage_key)
+    if (!object) fail(404, 'Stored Gmail attachment is missing')
+    const headers = new Headers(); object.writeHttpMetadata(headers)
+    headers.set('Content-Type', attachment.mime_type || 'application/octet-stream')
+    headers.set('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(attachment.filename)}`)
+    headers.set('Cache-Control', 'private, no-store'); headers.set('X-Content-Type-Options', 'nosniff')
+    return new Response(object.body, { headers })
+  })
+  app.post('/api/inbox/gmail/clear', async c => {
+    requireRoles(c, 'ADMIN')
+    const attachments = await all(c, "SELECT a.storage_key FROM inbox_attachments a JOIN inbox_messages m ON m.id=a.inbox_message_id WHERE m.source='gmail'")
+    const result = await run(c, "DELETE FROM inbox_messages WHERE source='gmail'")
+    if (c.env.FILES) await Promise.all(attachments.map((a: Row) => c.env.FILES!.delete(a.storage_key)))
+    return c.json({ ok: true, deleted: result.meta.changes, files_deleted: attachments.length })
+  })
   app.post('/api/inbox/manual-upload', async c => {
     const b = await c.req.parseBody(); const customer = await get(c, 'customers', b.customer_id, 'Customer'); const quantity = integer(b.quantity ?? 1, 'Quantity'); const source = typeof b.source === 'string' ? b.source : 'whatsapp'; const number = code('WJ'); const uid = code('F'); const f = await store(c, b.upload, { number }, 'original')
     try { const result = await database(c).batch([add(c, 'jobs', { number, customer_id: customer.id, source, status: 'WAITING_MAGICS' }), stmt(c, 'INSERT INTO inbox_messages (source,sender,subject,body,customer_id,job_id,archived,status) SELECT ?,?,?,?,?,id,1,? FROM jobs WHERE number=?', source, b.sender || customer.whatsapp || customer.email || '', `${source} file intake`, b.message || '', customer.id, 'IMPORTED', number), stmt(c, 'INSERT INTO job_files (job_id,file_uid,original_name,original_path,sha256,quantity,status) SELECT id,?,?,?,?,?,? FROM jobs WHERE number=?', uid, f.name, f.key, f.digest, quantity, 'RECEIVED', number)]); return c.json({ job_id: result[0].meta.last_row_id, job_number: number, file_id: uid, archived: true }) } catch (e) { await files(c).delete(f.key); throw e }
