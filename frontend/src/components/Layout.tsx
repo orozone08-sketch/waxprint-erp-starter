@@ -4,8 +4,15 @@ import {getJson, postJson, setStoredAuth, type AuthSession, type AuthUser} from 
 import {canAccessPage, normalizePage, roleHomePage} from '../authz'
 import {Job} from '../types'
 
-const items=[
- ['dashboard','Dashboard',LayoutDashboard],['inbox','Files / Inbox',Inbox],['jobs','Jobs',BriefcaseBusiness],['customers','Customers',Users],['magics','Magics Repair',Wrench],['platforms','Machine Software / Platforms',Layers3],['printing','Printing',Printer],['qc','Internal QC',CircleCheckBig],['reshoots','Reshoots',RefreshCcw],['weight','Weight',Scale],['dispatch','Packing / Dispatch',PackageCheck],['returns','Customer Returns',Undo2],['billing','Billing / Payments',ReceiptIndianRupee],['inventory','Materials / Inventory',Boxes],['expenses','Expenses',WalletCards],['reports','Reports / Profit',BarChart3],['settings','Settings',Settings]
+const navGroups=[
+ {title:'Overview',items:[['dashboard','Dashboard',LayoutDashboard]]},
+ {title:'Production flow',items:[
+  ['inbox','Files / Inbox',Inbox],['jobs','Jobs',BriefcaseBusiness],['magics','Magics Repair',Wrench],['platforms','WaxJet Platforms',Layers3],['printing','Printing',Printer],['qc','Internal QC',CircleCheckBig],['reshoots','Reshoots',RefreshCcw],['weight','Weight',Scale],['dispatch','Packing / Dispatch',PackageCheck],['returns','Customer Returns',Undo2]
+ ]},
+ {title:'Finance & costs',items:[
+  ['inventory','Materials & Cost',Boxes],['expenses','Expenses, Salary & Travel',WalletCards],['billing','Billing / Payments',ReceiptIndianRupee],['reports','Expense & Profit Reports',BarChart3]
+ ]},
+ {title:'Company',items:[['customers','Customers',Users],['settings','Settings',Settings] ]}
 ] as const
 
 type Customer={id:number;code:string;name:string;email:string|null;whatsapp:string|null}
@@ -25,7 +32,7 @@ export default function Layout({page,setPage,children,user,onLogout,companyName}
  const[passwordForm,setPasswordForm]=useState({current_password:'',new_password:'',confirm_password:''})
  const[passwordError,setPasswordError]=useState('')
  const[passwordNotice,setPasswordNotice]=useState('')
- const visibleItems=items.filter(([id])=>canAccessPage(id,user.role))
+ const visibleGroups=navGroups.map(group=>({...group,items:group.items.filter(([id])=>canAccessPage(id,user.role))})).filter(group=>group.items.length)
  const loadSearchData=async()=>{
   if(searchLoaded||searchLoading)return
   setSearchLoading(true);setSearchError('')
@@ -71,7 +78,10 @@ export default function Layout({page,setPage,children,user,onLogout,companyName}
    <div className="brand adityaBrand">
     <img className="brandLogoImage" src="/aditya360-logo.png" alt="ADITYA360 - 3D Wax Printing Accounting & Operations" />
    </div>
-   <nav>{visibleItems.map(([id,label,Icon])=><button key={id} className={normalizePage(page)===id?'active':''} onClick={()=>setPage(id)}><Icon size={17}/>{label}</button>)}</nav>
+   <nav>{visibleGroups.map(group=><div className="navGroup" key={group.title}>
+    <small className="navGroupTitle">{group.title}</small>
+    {group.items.map(([id,label,Icon])=><button key={id} className={normalizePage(page)===id?'active':''} onClick={()=>setPage(id)}><Icon size={17}/>{label}</button>)}
+   </div>)}</nav>
    <div className="asideNote"><span></span><p>Built for jewellery wax teams who need production and accounts in one place.</p></div>
   </aside>
   <main>
