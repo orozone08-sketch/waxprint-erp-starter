@@ -1,8 +1,7 @@
 import {type ReactNode, useEffect, useMemo, useState} from 'react'
-import {BriefcaseBusiness, CheckCircle2, IndianRupee, Plus, ReceiptText, RefreshCw, WalletCards} from 'lucide-react'
+import {BriefcaseBusiness, CheckCircle2, Plus, ReceiptText, RefreshCw, WalletCards} from 'lucide-react'
 import {getJson, postJson, type AppRole} from '../api'
 import {Job} from '../types'
-import {jumpTo} from '../ui'
 import Travel from './Travel'
 
 type Expense={id:number;date:string;category:string;subcategory?:string|null;description:string;amount:number;is_direct_cost:boolean;related_type:string;related_id?:number|null;approved:boolean}
@@ -29,6 +28,7 @@ export default function Expenses({role}:{role:AppRole|string}){
  const[notice,setNotice]=useState('')
  const[error,setError]=useState('')
  const[loading,setLoading]=useState(false)
+ const[view,setView]=useState<'expenses'|'staff'>('expenses')
 
  const load=async()=>{
   setError('')
@@ -45,6 +45,7 @@ export default function Expenses({role}:{role:AppRole|string}){
  const directTotal=expenses.filter(e=>e.is_direct_cost).reduce((s,e)=>s+e.amount,0)
  const overheadTotal=expenses.filter(e=>!e.is_direct_cost).reduce((s,e)=>s+e.amount,0)
  const monthTotal=expenses.filter(e=>String(e.date).slice(0,7)===today().slice(0,7)).reduce((s,e)=>s+e.amount,0)
+ const openHistory=()=>{const history=document.getElementById('expense-ledger') as HTMLDetailsElement|null;if(history){history.open=true;history.scrollIntoView({behavior:'smooth',block:'start'})}}
  const relatedOptions=useMemo(()=>{
   if(form.related_type==='JOB')return jobs.map(j=>({id:j.id,label:`${j.number} / ${j.customer}`}))
   if(form.related_type==='MACHINE')return machines.map(m=>({id:m.id,label:`${m.name} / ${m.code}`}))
@@ -82,55 +83,47 @@ export default function Expenses({role}:{role:AppRole|string}){
 
  return <section className="panel">
   <div className="expensesHeader">
-   <div><h2>Expenses</h2><p>{isAdmin?'Classify every expense as direct production cost or company overhead and link it where applicable.':'Submit production and office expenses for admin review.'}</p></div>
+   <div><h2>Expenses</h2><p>{isAdmin?'Record daily costs, then use Salary & staff costs for payroll, travel, advances, and commission.':'Submit a production or office expense for admin review.'}</p></div>
    <button className="secondaryBtn" onClick={()=>load().catch(x=>setError(String(x)))} disabled={loading}><RefreshCw size={16}/>Refresh</button>
   </div>
 
-  {isAdmin&&<div className="platformStats">
-   <Stat icon={<ReceiptText size={18}/>} label="Entries" value={expenses.length} onClick={()=>jumpTo('expense-ledger')}/>
-   <Stat icon={<BriefcaseBusiness size={18}/>} label="Direct Cost" value={money(directTotal)} onClick={()=>jumpTo('expense-ledger')}/>
-   <Stat icon={<WalletCards size={18}/>} label="Overhead" value={money(overheadTotal)} onClick={()=>jumpTo('expense-ledger')}/>
-   <Stat icon={<IndianRupee size={18}/>} label="This Month" value={money(monthTotal)} onClick={()=>jumpTo('expense-ledger')}/>
-   <Stat icon={<WalletCards size={18}/>} label="Staff Costs" value="Open" onClick={()=>jumpTo('expense-staff-costs')}/>
+  {isAdmin&&<div className="platformStats expenseSummary">
+   <Stat icon={<ReceiptText size={18}/>} label="Expense entries" value={expenses.length} onClick={openHistory}/>
+   <Stat icon={<BriefcaseBusiness size={18}/>} label="Production costs" value={money(directTotal)} onClick={openHistory}/>
+   <Stat icon={<WalletCards size={18}/>} label="This month" value={money(monthTotal)} onClick={openHistory}/>
   </div>}
 
-  {isAdmin&&<div className="advanceTabs expenseQuickTabs">
-   <button type="button" onClick={()=>jumpTo('add-expense')}><ReceiptText size={15}/>General Expense</button>
-   <button type="button" onClick={()=>jumpTo('salary-hr')}><WalletCards size={15}/>Salary / HR</button>
-   <button type="button" onClick={()=>jumpTo('travel-advances')}><WalletCards size={15}/>Travel</button>
-   <button type="button" onClick={()=>jumpTo('staff-advances')}><WalletCards size={15}/>Advance</button>
-   <button type="button" onClick={()=>jumpTo('commission')}><IndianRupee size={15}/>Commission</button>
+  {isAdmin&&<div className="expenseViewTabs" role="tablist" aria-label="Expense sections">
+   <button type="button" role="tab" aria-selected={view==='expenses'} className={view==='expenses'?'active':''} onClick={()=>setView('expenses')}><ReceiptText size={16}/>Daily expenses</button>
+   <button type="button" role="tab" aria-selected={view==='staff'} className={view==='staff'?'active':''} onClick={()=>setView('staff')}><WalletCards size={16}/>Salary & staff costs</button>
   </div>}
 
   {notice&&<div className="successBox">{notice}</div>}
   {error&&<div className="errorBox">{error}</div>}
 
-  <section className="subPanel" id="add-expense">
+  {view==='expenses'&&<section className="subPanel" id="add-expense">
    <div className="panelHead"><h2>Add Expense</h2><small>Direct or overhead</small></div>
    <div className="expenseForm">
     <label>Date<input type="date" value={form.expense_date} onChange={e=>setForm({...form,expense_date:e.target.value})}/></label>
     <label>Category<select value={form.category} onChange={e=>setForm({...form,category:e.target.value})}>{categories.map(c=><option key={c}>{c}</option>)}</select></label>
-    <label>Subcategory<input value={form.subcategory} onChange={e=>setForm({...form,subcategory:e.target.value})} placeholder="Optional"/></label>
     <label>Amount<input inputMode="decimal" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})}/></label>
-    <label>Tax<input inputMode="decimal" value={form.tax_amount} onChange={e=>setForm({...form,tax_amount:e.target.value})}/></label>
-    <label>Payment<select value={form.payment_mode} onChange={e=>setForm({...form,payment_mode:e.target.value})}><option>BANK</option><option>UPI</option><option>CASH</option><option>CHEQUE</option></select></label>
-    <label>Related to<select value={form.related_type} onChange={e=>changeRelatedType(e.target.value)}>{relatedTypes.map(type=><option key={type}>{type}</option>)}</select></label>
-    <label>Record<select value={form.related_id} onChange={e=>setForm({...form,related_id:e.target.value})} disabled={!relatedOptions.length}><option value="">No specific record</option>{relatedOptions.map(o=><option key={o.id} value={o.id}>{o.label}</option>)}</select></label>
-    <label className="wideField">Description<input value={form.description} onChange={e=>setForm({...form,description:e.target.value})} placeholder="Office rent / wax courier / machine repair"/></label>
-    <div className="expenseActions">
-     <label><input type="checkbox" checked={form.is_direct_cost} onChange={e=>setForm({...form,is_direct_cost:e.target.checked})}/>Direct production cost</label>
-     <span>{form.is_direct_cost?'Job / production cost':'Company overhead'}</span>
-     <button className="primaryBtn" onClick={saveExpense} disabled={loading}><Plus size={16}/>Add Expense</button>
-    </div>
+    <label>Cost type<select value={form.is_direct_cost?'DIRECT':'OVERHEAD'} onChange={e=>setForm({...form,is_direct_cost:e.target.value==='DIRECT'})}><option value="DIRECT">Production cost</option><option value="OVERHEAD">Company overhead</option></select></label>
+    <label className="wideField">Description<input value={form.description} onChange={e=>setForm({...form,description:e.target.value})} placeholder="For example: wax, courier, rent, or machine repair"/></label>
+    <div className="expenseActions"><button className="primaryBtn" onClick={saveExpense} disabled={loading}><Plus size={16}/>Save expense</button></div>
+    <details className="expenseAdvanced wideField"><summary>More details (optional)</summary><div className="expenseAdvancedGrid">
+     <label>Subcategory<input value={form.subcategory} onChange={e=>setForm({...form,subcategory:e.target.value})} placeholder="Optional"/></label>
+     <label>Tax<input inputMode="decimal" value={form.tax_amount} onChange={e=>setForm({...form,tax_amount:e.target.value})}/></label>
+     <label>Payment<select value={form.payment_mode} onChange={e=>setForm({...form,payment_mode:e.target.value})}><option>BANK</option><option>UPI</option><option>CASH</option><option>CHEQUE</option></select></label>
+     <label>Related to<select value={form.related_type} onChange={e=>changeRelatedType(e.target.value)}>{relatedTypes.map(type=><option key={type}>{type}</option>)}</select></label>
+     <label>Record<select value={form.related_id} onChange={e=>setForm({...form,related_id:e.target.value})} disabled={!relatedOptions.length}><option value="">No specific record</option>{relatedOptions.map(o=><option key={o.id} value={o.id}>{o.label}</option>)}</select></label>
+    </div></details>
    </div>
-  </section>
-
-  {isAdmin&&<section className="subPanel" id="expense-ledger">
-   <div className="panelHead"><h2>Expense Ledger</h2><small>{expenses.length} record(s)</small></div>
-   <table><thead><tr><th>Date</th><th>Category</th><th>Description</th><th>Amount</th><th>Cost Type</th><th>Related To</th><th>Status</th><th>Action</th></tr></thead><tbody>{expenses.map(e=><tr key={e.id}><td>{e.date}</td><td>{e.category}<small className="mutedCell">{e.subcategory||''}</small></td><td>{e.description}</td><td>{money(e.amount)}</td><td>{e.is_direct_cost?'Direct':'Overhead'}</td><td>{e.related_type}{e.related_id?` #${e.related_id}`:''}</td><td><span className={e.approved?'badge success':'badge warn'}>{e.approved?'Approved':'Pending'}</span></td><td>{e.approved?'-':<button className="miniBtn good" type="button" disabled={loading} onClick={()=>approveExpense(e.id)}><CheckCircle2 size={14}/>Approve</button>}</td></tr>)}</tbody></table>
+   {isAdmin&&<details className="expenseLedgerDetails" id="expense-ledger"><summary>Expense history <span>{expenses.length} entries · {money(overheadTotal)} overhead</span></summary>
+    {expenses.length?<table><thead><tr><th>Date</th><th>Category</th><th>Description</th><th>Amount</th><th>Cost Type</th><th>Related To</th><th>Status</th><th>Action</th></tr></thead><tbody>{expenses.map(e=><tr key={e.id}><td>{e.date}</td><td>{e.category}<small className="mutedCell">{e.subcategory||''}</small></td><td>{e.description}</td><td>{money(e.amount)}</td><td>{e.is_direct_cost?'Direct':'Overhead'}</td><td>{e.related_type}{e.related_id?` #${e.related_id}`:''}</td><td><span className={e.approved?'badge success':'badge warn'}>{e.approved?'Approved':'Pending'}</span></td><td>{e.approved?'-':<button className="miniBtn good" type="button" disabled={loading} onClick={()=>approveExpense(e.id)}><CheckCircle2 size={14}/>Approve</button>}</td></tr>)}</tbody></table>:<p className="expenseHistoryEmpty">No expenses have been recorded yet.</p>}
+   </details>}
   </section>}
 
-  {isAdmin&&<section className="subPanel" id="expense-staff-costs">
+  {isAdmin&&view==='staff'&&<section className="subPanel" id="expense-staff-costs">
    <Travel embedded/>
   </section>}
  </section>

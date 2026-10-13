@@ -448,6 +448,17 @@ tr:last-child td{border-bottom:0}
 .advanceTabs button{display:flex;align-items:center;justify-content:center;gap:8px;border:1px solid #edf1f5;border-radius:8px;background:#fff;color:#25384a;padding:10px;font-size:12px;font-weight:900;cursor:pointer}
 .advanceTabs button:hover,.advanceTabs button:focus-visible{border-color:#ffc7c7;background:#fff7f7;box-shadow:0 8px 20px rgba(233,77,79,.08);outline:0}
 .advanceTabs svg{color:var(--wax);flex:0 0 auto}
+.staffCostTabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:4px 0 16px}
+.staffCostTabs button{display:flex;align-items:center;gap:9px;text-align:left;border:1px solid #e8edf2;border-radius:8px;background:#fff;color:#25384a;padding:11px;cursor:pointer}
+.staffCostTabs button>svg{color:var(--wax);flex:0 0 auto}
+.staffCostTabs button span{display:flex;flex-direction:column;gap:3px;min-width:0}
+.staffCostTabs button b{font-size:12px}
+.staffCostTabs button small{color:#7b8794;font-size:11px}
+.staffCostTabs button.active{border-color:var(--wax);background:#fff7f7;box-shadow:0 6px 16px rgba(233,77,79,.08)}
+.staffHistory{margin-top:14px;border-top:1px solid var(--line);padding-top:6px}
+.staffHistory>summary{cursor:pointer;color:#425466;font-size:12px;font-weight:900;list-style-position:inside;padding:9px 2px}
+.staffHistory>summary span{float:right;color:#7b8794;font-weight:700}
+.staffHistory .subPanel{margin-top:8px}
 .advanceGrid,.ledgerSplit{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(300px,.55fr);gap:14px}
 .advanceGrid>div,.ledgerSplit>div{min-width:0}
 .advanceForm,.commissionForm{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;background:#f8fafc;border:1px solid #edf1f5;border-radius:8px;padding:12px}
@@ -648,15 +659,24 @@ tr:last-child td{border-bottom:0}
 .expensesHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px}
 .expensesHeader h2{margin:0 0 5px}
 .expensesHeader p{margin:0;color:#667085;font-size:13px}
+.expenseSummary{grid-template-columns:repeat(3,minmax(160px,1fr));margin-bottom:14px}
+.expenseViewTabs{display:flex;gap:8px;margin:4px 0 16px;border-bottom:1px solid var(--line)}
+.expenseViewTabs button{display:flex;align-items:center;gap:8px;border:0;border-bottom:3px solid transparent;background:transparent;color:#596979;padding:11px 14px;font-weight:900;cursor:pointer}
+.expenseViewTabs button svg{color:var(--wax)}
+.expenseViewTabs button.active{color:#132838;border-bottom-color:var(--wax)}
 .expenseForm{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;background:#f8fafc;border:1px solid #edf1f5;border-radius:8px;padding:12px}
 .expenseForm label{display:flex;flex-direction:column;gap:6px;color:#596979;font-size:12px;font-weight:900;min-width:0}
 .expenseForm input,.expenseForm select{border:1px solid var(--line);border-radius:8px;background:#fff;color:#132838;padding:10px 11px;outline:0;min-width:0}
 .expenseForm input:focus,.expenseForm select:focus{border-color:var(--wax);box-shadow:0 0 0 3px rgba(233,77,79,.12)}
-.expenseForm .wideField{grid-column:span 2}
-.expenseActions{grid-column:1 / -1;display:grid;grid-template-columns:auto minmax(180px,1fr) auto;align-items:center;gap:12px;border-top:1px solid #edf1f5;padding-top:10px}
-.expenseActions label{flex-direction:row;align-items:center;gap:7px}
-.expenseActions input{width:14px;height:14px;padding:0}
-.expenseActions span{color:#667085;font-size:12px;font-weight:900}
+.expenseForm .wideField{grid-column:1 / -1}
+.expenseActions{grid-column:1 / -1;display:flex;justify-content:flex-end;border-top:1px solid #edf1f5;padding-top:10px}
+.expenseAdvanced.wideField{grid-column:1 / -1;border-top:1px solid #edf1f5;padding-top:8px}
+.expenseAdvanced summary,.expenseLedgerDetails summary{cursor:pointer;color:#425466;font-size:12px;font-weight:900;list-style-position:inside;padding:8px 2px}
+.expenseAdvancedGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;padding:6px 2px}
+.expenseLedgerDetails{margin-top:16px;border-top:1px solid var(--line);padding-top:7px}
+.expenseLedgerDetails summary{display:flex;justify-content:space-between;gap:12px}
+.expenseLedgerDetails summary span{color:#7b8794;font-weight:700}
+.expenseHistoryEmpty{margin:8px 0 14px;padding:14px;background:#f8fafc;border-radius:8px;color:#667085;font-size:13px}
 @media(max-width:1120px){
  .adminShell{grid-template-columns:1fr}
  .adminSideNav{position:relative;height:auto;display:grid;grid-template-columns:minmax(180px,260px) minmax(0,1fr);gap:14px;align-items:start}
@@ -734,6 +754,7 @@ tr:last-child td{border-bottom:0}
  .hrHeader{flex-direction:column}
  .travelHeader{flex-direction:column}
  .advanceTabs{grid-template-columns:repeat(2,minmax(120px,1fr))}
+ .staffCostTabs{grid-template-columns:repeat(2,minmax(0,1fr))}
  .settingsHeader{flex-direction:column}
  .adminHeader{flex-direction:column}
  .adminHeaderActions{width:100%;flex-wrap:wrap}
@@ -768,6 +789,10 @@ tr:last-child td{border-bottom:0}
  .employeeCard{grid-template-columns:30px minmax(0,1fr)}
  .employeeCard strong{grid-column:2}
  .advanceTabs,.advanceForm,.commissionForm,.advanceTotals{grid-template-columns:1fr}
+ .staffCostTabs,.expenseViewTabs{grid-template-columns:1fr}
+ .expenseViewTabs{display:grid}
+ .expenseSummary,.expenseAdvancedGrid{grid-template-columns:1fr}
+ .expenseViewTabs button{justify-content:flex-start}
  .advanceForm .wideField,.advanceTotals{grid-column:auto}
  .commissionForm label:nth-child(4){min-height:auto}
  .travelForm,.travelPreview{grid-template-columns:1fr}

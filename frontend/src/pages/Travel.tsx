@@ -1,8 +1,7 @@
-import {type ReactNode, useEffect, useMemo, useState} from 'react'
-import {BadgeCheck, BadgeIndianRupee, IndianRupee, Plane, Plus, RefreshCw, Users, WalletCards} from 'lucide-react'
+import {useEffect, useMemo, useState} from 'react'
+import {BadgeCheck, IndianRupee, Plane, Plus, RefreshCw, Users, WalletCards} from 'lucide-react'
 import {getJson, postJson} from '../api'
 import {Job} from '../types'
-import {jumpTo} from '../ui'
 
 type Employee={id:number;code:string;name:string;department:string;role:string;monthly_salary:number}
 type Payroll={id:number;employee_id:number;employee_name:string;period:string;basic:number;bonus:number;commission:number;reimbursement:number;advance_deduction:number;other_deduction:number;net_payable:number;paid:boolean}
@@ -18,6 +17,7 @@ const today=()=>new Date().toISOString().slice(0,10)
 const currentPeriod=()=>new Date().toISOString().slice(0,7)
 
 export default function Travel({embedded=false}:{embedded?:boolean}={}){
+ const[activeSection,setActiveSection]=useState<'salary'|'travel'|'advance'|'commission'>('salary')
  const[employees,setEmployees]=useState<Employee[]>([])
  const[jobs,setJobs]=useState<Job[]>([])
  const[payroll,setPayroll]=useState<Payroll[]>([])
@@ -101,29 +101,21 @@ export default function Travel({embedded=false}:{embedded?:boolean}={}){
 
  return <section className={embedded?'expensePeopleCosts':'panel'}>
   <div className="travelHeader">
-   <div><h2>{embedded?'Salary, Travel, Advance & Commission':'Advances'}</h2><p>Salary / HR, travel, staff advances and commission in one place.</p></div>
+   <div><h2>{embedded?'Salary & staff costs':'Advances'}</h2><p>Choose one staff cost area to view or update it.</p></div>
    <button className="secondaryBtn" onClick={()=>load().catch(x=>setError(String(x)))} disabled={loading}><RefreshCw size={16}/>Refresh</button>
   </div>
 
-  <div className="platformStats">
-   <Stat icon={<Users size={18}/>} label="Employees" value={employees.length} onClick={()=>jumpTo('salary-hr')}/>
-   <Stat icon={<BadgeIndianRupee size={18}/>} label="Salary Payable" value={money(currentPayable)} onClick={()=>jumpTo('salary-hr')}/>
-   <Stat icon={<Plane size={18}/>} label="Travel Advances" value={money(totalTravelAdvance)} onClick={()=>jumpTo('travel-advances')}/>
-   <Stat icon={<WalletCards size={18}/>} label="Staff Advances" value={money(staffAdvanceOutstanding)} onClick={()=>jumpTo('staff-advances')}/>
-   <Stat icon={<IndianRupee size={18}/>} label="Commission" value={money(payrollCommission)} onClick={()=>jumpTo('commission')}/>
-  </div>
-
-  <div className="advanceTabs">
-   <button type="button" onClick={()=>jumpTo('salary-hr')}><Users size={15}/>Salary / HR</button>
-   <button type="button" onClick={()=>jumpTo('travel-advances')}><Plane size={15}/>Travel</button>
-   <button type="button" onClick={()=>jumpTo('staff-advances')}><WalletCards size={15}/>Advance</button>
-   <button type="button" onClick={()=>jumpTo('commission')}><IndianRupee size={15}/>Commission</button>
+  <div className="staffCostTabs" role="tablist" aria-label="Staff cost types">
+   <button type="button" role="tab" aria-selected={activeSection==='salary'} className={activeSection==='salary'?'active':''} onClick={()=>setActiveSection('salary')}><Users size={16}/><span><b>Salary & payroll</b><small>{money(currentPayable)} payable</small></span></button>
+   <button type="button" role="tab" aria-selected={activeSection==='travel'} className={activeSection==='travel'?'active':''} onClick={()=>setActiveSection('travel')}><Plane size={16}/><span><b>Travel</b><small>{money(totalTravelAdvance)} advances</small></span></button>
+   <button type="button" role="tab" aria-selected={activeSection==='advance'} className={activeSection==='advance'?'active':''} onClick={()=>setActiveSection('advance')}><WalletCards size={16}/><span><b>Staff advances</b><small>{money(staffAdvanceOutstanding)} outstanding</small></span></button>
+   <button type="button" role="tab" aria-selected={activeSection==='commission'} className={activeSection==='commission'?'active':''} onClick={()=>setActiveSection('commission')}><IndianRupee size={16}/><span><b>Commission</b><small>{money(payrollCommission)} recorded</small></span></button>
   </div>
 
   {notice&&<div className="successBox">{notice}</div>}
   {error&&<div className="errorBox">{error}</div>}
 
-  <section className="hrGrid subPanel" id="salary-hr">
+  {activeSection==='salary'&&<><section className="hrGrid subPanel" id="salary-hr">
    <div>
     <div className="panelHead"><h2>Salary / HR</h2><small>{employees.length} employee(s)</small></div>
     <div className="employeeForm">
@@ -155,8 +147,18 @@ export default function Travel({embedded=false}:{embedded?:boolean}={}){
     </div>
    </div>
   </section>
+  <details className="staffHistory"><summary>Payroll history and advances</summary><section className="ledgerSplit subPanel">
+   <div>
+    <div className="panelHead"><h2>Payroll History</h2><small>{payroll.length} record(s)</small></div>
+    <table><thead><tr><th>Period</th><th>Employee</th><th>Salary</th><th>Commission</th><th>Advance</th><th>Net</th><th>Status</th></tr></thead><tbody>{payroll.map(p=><tr key={p.id}><td>{p.period}</td><td><b>{p.employee_name}</b></td><td>{money(p.basic)}</td><td>{money(p.commission)}</td><td>{money(p.advance_deduction)}</td><td>{money(p.net_payable)}</td><td><span className={p.paid?'badge success':'badge warn'}>{p.paid?'Paid':'Unpaid'}</span></td></tr>)}</tbody></table>
+   </div>
+   <div>
+    <div className="panelHead"><h2>Advance Ledger</h2><small>{advances.length} record(s)</small></div>
+    <table><thead><tr><th>Date</th><th>Employee</th><th>Purpose</th><th>Amount</th><th>Month</th></tr></thead><tbody>{advances.map(a=><tr key={a.id}><td>{a.advance_date}</td><td><b>{a.employee_name}</b><small className="mutedCell">{a.job_number||'General'}</small></td><td>{a.purpose}</td><td>{money(a.amount)}</td><td>{a.period||'-'}</td></tr>)}</tbody></table>
+   </div>
+  </section></details></>}
 
-  <section className="advanceGrid subPanel" id="staff-advances">
+  {activeSection==='advance'&&<><section className="advanceGrid subPanel" id="staff-advances">
    <div>
     <div className="panelHead"><h2>Advance Entry</h2><small>Outstanding {money(staffAdvanceOutstanding)}</small></div>
     <div className="advanceForm">
@@ -179,9 +181,9 @@ export default function Travel({embedded=false}:{embedded?:boolean}={}){
      {!advances.length&&<div className="emptyState"><BadgeCheck size={28}/><p>No staff advances yet.</p></div>}
     </div>
    </div>
-  </section>
+  </section></>}
 
-  <section className="advanceGrid subPanel" id="commission">
+  {activeSection==='commission'&&<section className="advanceGrid subPanel" id="commission">
    <div>
     <div className="panelHead"><h2>Commission</h2><small>Total {money(payrollCommission)}</small></div>
     <div className="commissionForm">
@@ -199,9 +201,9 @@ export default function Travel({embedded=false}:{embedded?:boolean}={}){
      {!payroll.some(p=>p.commission>0)&&<div className="emptyState"><BadgeCheck size={28}/><p>No commission entries yet.</p></div>}
     </div>
    </div>
-  </section>
+  </section>}
 
-  <section className="travelGrid subPanel" id="travel-advances">
+  {activeSection==='travel'&&<><section className="travelGrid subPanel" id="travel-advances">
    <div>
     <div className="panelHead"><h2>Travel Entry</h2><small>{openTrips.length} open trip(s)</small></div>
     <div className="travelForm">
@@ -231,24 +233,11 @@ export default function Travel({embedded=false}:{embedded?:boolean}={}){
     </div>
    </div>
   </section>
-
-  <section className="ledgerSplit subPanel">
-   <div>
-    <div className="panelHead"><h2>Payroll History</h2><small>{payroll.length} record(s)</small></div>
-    <table><thead><tr><th>Period</th><th>Employee</th><th>Salary</th><th>Commission</th><th>Advance</th><th>Net</th><th>Status</th></tr></thead><tbody>{payroll.map(p=><tr key={p.id}><td>{p.period}</td><td><b>{p.employee_name}</b></td><td>{money(p.basic)}</td><td>{money(p.commission)}</td><td>{money(p.advance_deduction)}</td><td>{money(p.net_payable)}</td><td><span className={p.paid?'badge success':'badge warn'}>{p.paid?'Paid':'Unpaid'}</span></td></tr>)}</tbody></table>
-   </div>
-   <div>
-    <div className="panelHead"><h2>Advance Ledger</h2><small>{advances.length} record(s)</small></div>
-    <table><thead><tr><th>Date</th><th>Employee</th><th>Purpose</th><th>Amount</th><th>Month</th></tr></thead><tbody>{advances.map(a=><tr key={a.id}><td>{a.advance_date}</td><td><b>{a.employee_name}</b><small className="mutedCell">{a.job_number||'General'}</small></td><td>{a.purpose}</td><td>{money(a.amount)}</td><td>{a.period||'-'}</td></tr>)}</tbody></table>
-   </div>
-  </section>
-
-  <section className="subPanel">
+  <details className="staffHistory"><summary>Travel history <span>{travel.length} trip(s)</span></summary><section className="subPanel">
    <div className="panelHead"><h2>Travel Ledger</h2><small>{travel.length} trip(s)</small></div>
    <table><thead><tr><th>Date</th><th>Employee</th><th>Destination</th><th>Job</th><th>Advance</th><th>Expense</th><th>Balance</th><th>Status</th></tr></thead><tbody>{travel.map(t=><tr key={t.id}><td>{t.trip_date}</td><td><b>{t.employee_name}</b><small className="mutedCell">{employeeById[t.employee_id]?.role||''}</small></td><td>{t.destination}<small className="mutedCell">{t.purpose}</small></td><td>{t.job_number||'General'}</td><td>{money(t.advance_amount)}</td><td>{money(t.total_expense)}</td><td>{money(t.balance)}</td><td><span className={t.status==='SETTLED'?'badge success':'badge warn'}>{pretty(t.status)}</span></td></tr>)}</tbody></table>
-  </section>
+  </section></details></>}
  </section>
 }
 
-function Stat({icon,label,value,onClick}:{icon:ReactNode;label:string;value:string|number;onClick:()=>void}){return <button className="setupCard clickableStat" type="button" onClick={onClick}>{icon}<span><b>{value}</b><small>{label}</small></span></button>}
 function pretty(value:string){return value.toLowerCase().replace(/_/g,' ').replace(/\b\w/g,s=>s.toUpperCase())}
