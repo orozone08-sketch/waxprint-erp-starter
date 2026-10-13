@@ -7,18 +7,35 @@
   "workers_dev": true,
   "preview_urls": false,
   "assets": {
-    "directory": "frontend/dist", "binding": "ASSETS",
+    "directory": "frontend/dist",
+    "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*", "/health"]
+    "run_worker_first": [
+      "/api/*",
+      "/health"
+    ]
   },
-  "d1_databases": [{
-    "binding": "DB", "database_name": "waxprint-erp",
-    "database_id": "e7a2d654-5471-4bb7-89b1-299ad45218e7",
-    "migrations_dir": "migrations"
-  }, {
-    "binding": "DB_SUNMOON", "database_name": "waxprint-erp-sunmoon",
-    "database_id": "8778e428-2ea2-4377-a9b5-7ad19382402e",
-    "migrations_dir": "migrations"
-  }],
-  "observability": {"enabled": true}
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "waxprint-erp",
+      "database_id": "e7a2d654-5471-4bb7-89b1-299ad45218e7",
+      "migrations_dir": "migrations"
+    },
+    {
+      "binding": "DB_SUNMOON",
+      "database_name": "waxprint-erp-sunmoon",
+      "database_id": "8778e428-2ea2-4377-a9b5-7ad19382402e",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  },
+  "r2_buckets": [
+    {
+      "binding": "FILES",
+      "bucket_name": "waxprint-erp-files"
+    }
+  ]
 }
