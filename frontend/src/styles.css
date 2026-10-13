@@ -333,12 +333,16 @@ tr:last-child td{border-bottom:0}
 .qcHeader h2{margin:0 0 5px}
 .qcHeader p{margin:0;color:#667085;font-size:13px}
 .qcQueue{display:flex;flex-direction:column;gap:10px}
-.qcCard{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:14px;background:#f8fafc;border:1px solid #edf1f5;border-radius:8px;padding:12px}
+.qcCard{display:grid;grid-template-columns:minmax(0,1fr) minmax(360px,.9fr);align-items:center;gap:14px;background:#f8fafc;border:1px solid #edf1f5;border-radius:8px;padding:12px}
 .qcCard small{display:block;color:var(--wax);font-size:11px;font-weight:900;letter-spacing:.4px;margin-bottom:3px}
 .qcCard h3{margin:0;color:#132838;font-size:16px}
 .qcCard span{display:block;color:#667085;font-size:12px;margin-top:4px}
-.qcActions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
-.qcActions select{border:1px solid var(--line);border-radius:8px;background:#fff;color:#132838;padding:8px 10px;outline:0;font-size:12px;font-weight:800}
+.qcActions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:end;gap:8px}
+.qcActions label{display:flex;flex-direction:column;gap:5px;color:#596979;font-size:11px;font-weight:900;min-width:0}
+.qcActions input,.qcActions select{width:100%;min-width:0;border:1px solid var(--line);border-radius:8px;background:#fff;color:#132838;padding:8px 10px;outline:0;font-size:12px;font-weight:800}
+.qcActions input:focus,.qcActions select:focus{border-color:var(--wax);box-shadow:0 0 0 3px rgba(233,77,79,.12)}
+.qcSaveButton{min-height:36px;justify-content:center}
+.qcActions .qcValidation{grid-column:1/-1;color:#b42318;font-size:11px;font-weight:700}
 .weightHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px}
 .weightHeader h2{margin:0 0 5px}
 .weightHeader p{margin:0;color:#667085;font-size:13px}
@@ -745,7 +749,7 @@ tr:last-child td{border-bottom:0}
  .printingHeader{flex-direction:column}
  .printControls{grid-template-columns:1fr}
  .qcHeader,.qcCard{grid-template-columns:1fr}
- .qcActions{justify-content:flex-start}
+ .qcActions{grid-template-columns:repeat(2,minmax(0,1fr))}
  .weightHeader{flex-direction:column}
  .weightPreview{grid-template-columns:1fr}
  .dispatchHeader{flex-direction:column}

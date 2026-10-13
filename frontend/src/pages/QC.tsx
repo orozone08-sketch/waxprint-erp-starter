@@ -52,8 +52,12 @@ export default function QC(){
   finally{setLoading(false)}
  }
 
- const pass=(attempt:PrintAttempt)=>run(()=>postJson(`/api/print-attempts/${attempt.id}/qc`,{good_qty:attempt.expected_qty||1,bad_qty:0,reason:null,create_reshoot:false}),`Attempt #${attempt.id} passed internal QC.`)
- const fail=(attempt:PrintAttempt,reason:string)=>run(()=>postJson(`/api/print-attempts/${attempt.id}/qc`,{good_qty:0,bad_qty:attempt.expected_qty||1,reason,create_reshoot:true,responsibility:'OUR_PRODUCTION'}),`Attempt #${attempt.id} failed QC and reshoot ticket was created.`)
+ const saveQC=(attempt:PrintAttempt,good_qty:number,bad_qty:number,reason:string)=>{
+  const expected=attempt.expected_qty||1
+  if(good_qty+bad_qty!==expected){setError(`Good and damaged pieces must add up to ${expected}.`);return}
+  const hasDamage=bad_qty>0
+  return run(()=>postJson(`/api/print-attempts/${attempt.id}/qc`,{good_qty,bad_qty,reason:hasDamage?reason:null,create_reshoot:hasDamage,responsibility:'OUR_PRODUCTION'}),hasDamage?`QC saved. A reshoot was created for ${bad_qty} damaged piece(s).`:`Attempt #${attempt.id} passed internal QC.`)
+ }
 
  return <section className="panel">
   <div className="qcHeader">
@@ -75,7 +79,7 @@ export default function QC(){
   <section className="subPanel" id="qc-queue">
    <div className="panelHead"><h2>QC Queue</h2><small>{queue.length} print attempt(s)</small></div>
    <div className="qcQueue">
-    {queue.map(a=><QcCard key={a.id} attempt={a} context={fileLookup[a.file_id]} disabled={loading} onPass={()=>pass(a)} onFail={(reason)=>fail(a,reason)}/>)}
+    {queue.map(a=><QcCard key={a.id} attempt={a} context={fileLookup[a.file_id]} disabled={loading} onSave={(good,bad,reason)=>saveQC(a,good,bad,reason)}/>)}
    </div>
    {!queue.length&&<div className="emptyState inboxEmpty"><ClipboardCheck size={30}/><p>No print attempts waiting for QC.</p></div>}
   </section>
@@ -90,8 +94,18 @@ export default function QC(){
  </section>
 }
 
-function QcCard({attempt,context,disabled,onPass,onFail}:{attempt:PrintAttempt;context?:{job:Job;file:JobFile};disabled:boolean;onPass:()=>void;onFail:(reason:string)=>void}){
+function QcCard({attempt,context,disabled,onSave}:{attempt:PrintAttempt;context?:{job:Job;file:JobFile};disabled:boolean;onSave:(good:number,bad:number,reason:string)=>void}){
  const[reason,setReason]=useState(reasons[0])
+ const[goodQty,setGoodQty]=useState(String(attempt.expected_qty||1))
+ const[badQty,setBadQty]=useState('0')
+ const[validation,setValidation]=useState('')
+ const expected=attempt.expected_qty||1
+ const submit=()=>{
+  const good=Number(goodQty),bad=Number(badQty)
+  if(!Number.isInteger(good)||!Number.isInteger(bad)||good<0||bad<0){setValidation('Enter whole numbers of zero or more.');return}
+  if(good+bad!==expected){setValidation(`Good and damaged pieces must total ${expected}.`);return}
+  setValidation('');onSave(good,bad,reason)
+ }
  return <article className="qcCard">
   <div>
    <small>{context?.job.number||`File #${attempt.file_id}`}</small>
@@ -99,9 +113,11 @@ function QcCard({attempt,context,disabled,onPass,onFail}:{attempt:PrintAttempt;c
    <span>{context?.file.name||'No file name'} · {attempt.expected_qty||1} expected · {attempt.production_weight_g}g</span>
   </div>
   <div className="qcActions">
-   <select value={reason} onChange={e=>setReason(e.target.value)}>{reasons.map(r=><option value={r} key={r}>{r}</option>)}</select>
-   <button className="miniBtn good" disabled={disabled} onClick={onPass}><BadgeCheck size={14}/>Pass</button>
-   <button className="miniBtn warn" disabled={disabled} onClick={()=>onFail(reason)}><XCircle size={14}/>Fail + Reshoot</button>
+   <label>Good pieces<input type="number" min="0" max={expected} step="1" value={goodQty} onChange={e=>setGoodQty(e.target.value)} disabled={disabled}/></label>
+   <label>Damaged pieces<input type="number" min="0" max={expected} step="1" value={badQty} onChange={e=>setBadQty(e.target.value)} disabled={disabled}/></label>
+   {Number(badQty)>0&&<label>Damage reason<select value={reason} onChange={e=>setReason(e.target.value)} disabled={disabled}>{reasons.map(r=><option value={r} key={r}>{r}</option>)}</select></label>}
+   <button className="miniBtn good qcSaveButton" disabled={disabled} onClick={submit}><BadgeCheck size={14}/>Save QC</button>
+   {validation&&<small className="qcValidation">{validation}</small>}
   </div>
  </article>
 }
