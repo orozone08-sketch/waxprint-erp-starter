@@ -5,7 +5,7 @@ import {jumpTo} from '../ui'
 
 type InboxAttachment={id:number;filename:string;mime_type:string;size_bytes:number}
 type InboxMessage={id:number;source:string;sender:string|null;subject:string|null;received_at:string;archived:boolean;status:string;customer_id:number|null;job_id:number|null;attachments:InboxAttachment[]}
-type GmailStatus={enabled:boolean;configured:boolean;client_configured:boolean;storage_enabled:boolean;mode:string;user:string;mailbox:string;fetch_query:string;fetch_limit:number}
+type GmailStatus={enabled:boolean;configured:boolean;client_configured:boolean;bridge_configured:boolean;storage_enabled:boolean;mode:string;user:string;mailbox:string;fetch_query:string;fetch_limit:number}
 type GmailFetch={ok:boolean;message:string;fetched?:number;imported?:number;skipped_existing?:number;attachments_imported?:number;errors?:string[]}
 
 export default function Inbox(){
@@ -38,6 +38,8 @@ export default function Inbox(){
   }catch(x){setError(String(x));setConnecting(false)}
  }
 
+ const refreshInbox=async()=>{setLoading(true);setError('');try{await load();setNotice('Inbox refreshed.')}catch(x){setError(String(x))}finally{setLoading(false)}}
+
  useEffect(()=>{
   const result=new URLSearchParams(window.location.search).get('gmail')
   if(result==='connected'&&!autoFetchStarted.current){
@@ -53,15 +55,13 @@ export default function Inbox(){
   <div className="inboxHeader">
    <div><h2>Files / Inbox</h2><p>Fetch Gmail enquiries, customer files and WhatsApp/manual intake records before production.</p></div>
    <div className="inboxHeaderActions">
-    <button className="secondaryBtn" onClick={connectGmail} disabled={connecting||!status?.client_configured}><Mail size={16}/>{connecting?'Opening Google...':status?.configured?'Change Gmail account':'Sign in with Google'}</button>
-    <button className="primaryBtn" onClick={fetchGmail} disabled={loading||!status?.configured}><RefreshCw size={16}/>{loading?'Fetching...':'Fetch Gmail'}</button>
-    {!status?.client_configured&&<a className="gmailSetupLink" href="/?page=settings#gmail">Google setup</a>}
+    {status?.client_configured?<><button className="secondaryBtn" onClick={connectGmail} disabled={connecting}><Mail size={16}/>{connecting?'Opening Google...':status?.configured?'Change Gmail account':'Sign in with Google'}</button><button className="primaryBtn" onClick={fetchGmail} disabled={loading||!status?.configured}><RefreshCw size={16}/>{loading?'Fetching...':'Fetch Gmail'}</button></>:<><a className="primaryBtn" href="/?page=settings#gmail">{status?.bridge_configured?'Apps Script setup':'Set up Gmail'}</a><button className="secondaryBtn" onClick={refreshInbox} disabled={loading}><RefreshCw size={16}/>{loading?'Refreshing...':'Refresh Inbox'}</button></>}
    </div>
   </div>
 
   <div className="gmailStatus">
    {status?.enabled&&status.configured?<CheckCircle2 size={18}/>:<AlertTriangle size={18}/>}
-   <span>{status?.enabled&&status.configured?`Gmail connected: ${status.user || 'configured account'} / ${status.mailbox} / ${status.fetch_query}${status.storage_enabled?' · downloaded files are saved in ERP storage':' · file storage must be enabled before Gmail files can be archived'}`:status?.client_configured?'Click Sign in with Google above. After you approve access, the ERP will fetch Gmail automatically.':'Set up the Google OAuth client once in Settings > Gmail Intake. Then sign in here; fetched attachments are kept in ERP storage.'}</span>
+   <span>{status?.enabled&&status.configured?`Gmail connected: ${status.user || 'configured account'} / ${status.mailbox} / ${status.fetch_query}${status.storage_enabled?' · downloaded files are saved in ERP storage':' · file storage must be enabled before Gmail files can be archived'}`:status?.bridge_configured?'Finish the Apps Script setup in Settings. After you authorize it, Gmail attachments will sync automatically every 15 minutes.':status?.client_configured?'Click Sign in with Google above. After you approve access, the ERP will fetch Gmail automatically.':'Set up Gmail in Settings to start importing email attachments into the ERP Inbox.'}</span>
   </div>
 
   {notice&&<div className="successBox">{notice}</div>}

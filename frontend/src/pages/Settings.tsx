@@ -6,7 +6,7 @@ type Customer={id:number;code:string;name:string;email:string|null;whatsapp:stri
 type Supplier={id:number;code:string;name:string;gst_number:string|null;contact:string|null}
 type Machine={id:number;code:string;name:string;model:string|null;serial_number:string|null;status:string}
 type Material={id:number;code:string;name:string;unit:string;stock:number;minimum_stock:number}
-type Integrations={gmail:{enabled:boolean;configured:boolean;client_configured:boolean;storage_enabled:boolean;mode:string;user:string;mailbox:string;fetch_query:string;fetch_limit:number;redirect_uri:string;archive_label:string};magics:{agent_token_configured:boolean;workstation_default:string;local_agent_folder:string;queue_endpoint:string}}
+type Integrations={gmail:{enabled:boolean;configured:boolean;client_configured:boolean;bridge_configured:boolean;storage_enabled:boolean;mode:string;user:string;mailbox:string;fetch_query:string;fetch_limit:number;redirect_uri:string;archive_label:string};magics:{agent_token_configured:boolean;workstation_default:string;local_agent_folder:string;queue_endpoint:string}}
 type GmailSave={ok:boolean;message:string;gmail:Integrations['gmail']}
 type GmailTest={ok:boolean;message:string;gmail:Integrations['gmail']}
 
@@ -83,6 +83,19 @@ export default function SettingsPage(){
   const result=await getJson<{url:string}>('/api/settings/gmail/connect-url')
   window.location.assign(result.url)
  },'Opening Google sign-in...')
+ const downloadGmailBridge=()=>{
+  if(integrations?.gmail.bridge_configured&&!window.confirm('This replaces the current Apps Script key. Any old script will stop importing Gmail. Continue?'))return
+  return run(async()=>{
+  const templateResponse=await fetch('/gmail-bridge.gs')
+  if(!templateResponse.ok)throw new Error('Could not load the Apps Script file. Refresh and try again.')
+  const template=await templateResponse.text()
+  const result=await postJson<{token:string}>('/api/settings/gmail/bridge-key',{})
+  const script=template.replace("'PASTE_ERP_BRIDGE_KEY_HERE'",JSON.stringify(result.token))
+  if(script===template)throw new Error('The script template did not contain the key placeholder.')
+  const url=URL.createObjectURL(new Blob([script],{type:'text/plain'}))
+  const link=document.createElement('a');link.href=url;link.download='WaxPrint-Gmail-Bridge.gs';document.body.appendChild(link);link.click();link.remove();window.setTimeout(()=>URL.revokeObjectURL(url),1000)
+  },'Apps Script downloaded with a new private ERP key. Follow the setup steps below.')
+ }
  const removeGmail=()=>run(async()=>{
   const saved=await postJson<GmailSave>('/api/settings/gmail',{
    enabled:false,
@@ -120,16 +133,17 @@ export default function SettingsPage(){
   <section className="settingsGrid subPanel">
    <MasterPanel panelRef={gmailRef} active={highlight==='gmail'} icon={<Mail size={18}/>} title="Gmail Intake">
     <div className="integrationRows">
-     <Info label="Connection" value={integrations?.gmail.configured?'Connected':'Not connected'}/>
-     <Info label="Google app" value={integrations?.gmail.client_configured?'Ready':'Needs one-time setup'}/>
+     <Info label="Connection" value={integrations?.gmail.bridge_configured?'Apps Script bridge ready':integrations?.gmail.configured?'Connected':'Not connected'}/>
+     <Info label="Google app" value={integrations?.gmail.bridge_configured?'Apps Script key ready':'Apps Script setup'}/>
      <Info label="Attachment storage" value={integrations?.gmail.storage_enabled?'R2 ready':'Enable R2 first'}/>
      <Info label="Account" value={integrations?.gmail.user||'Not set'}/>
      <Info label="Gmail label" value={integrations?.gmail.mailbox||'INBOX'}/>
      <Info label="Fetch" value={`${integrations?.gmail.fetch_query||'is:unread'} / ${integrations?.gmail.fetch_limit||0}`}/>
     </div>
-    <p>Sign in to the Gmail account you want the ERP to read. Google asks you to approve read-only email access; the ERP stores the returned refresh token encrypted and saves attached files in R2. A Google OAuth app must be set up once for this website.</p>
-    {!integrations?.gmail.client_configured&&<div className="gmailSetupHelp"><b>One-time Google setup</b><ol><li>In Google Cloud Console, enable the Gmail API and create an OAuth client with type <b>Web application</b>.</li><li>Add this authorized redirect URL: <code>{integrations?.gmail.redirect_uri||'https://waxprint-erp.orozone08.workers.dev/api/integrations/gmail/callback'}</code>.</li><li>From the ERP project folder in PowerShell, run <code>npx.cmd wrangler secret put GMAIL_CLIENT_ID</code> and <code>npx.cmd wrangler secret put GMAIL_CLIENT_SECRET</code>. Enter the values from Google Cloud when prompted.</li></ol></div>}
-    <div className="gmailConnectActions"><button className="primaryBtn" type="button" onClick={connectGmail} disabled={loading||!integrations?.gmail.client_configured}><Mail size={16}/>{integrations?.gmail.configured?'Reconnect Gmail with Google':'Connect with Google'}</button><small>{integrations?.gmail.client_configured?'Google opens a secure sign-in window.':'Complete the one-time Google app setup above first.'}</small></div>
+    <p>Use the Apps Script bridge to import Gmail messages and print files without setting up Google Cloud OAuth credentials. Google will ask you to approve Gmail access when you run the script the first time. Imported attachments are saved in ERP storage.</p>
+    <div className="gmailSetupHelp"><b>Apps Script setup</b><ol><li>Click the button to download a private script configured for this company.</li><li>Open <a href="https://script.google.com/home/start" target="_blank" rel="noreferrer">Google Apps Script</a> and create a project. Replace <code>Code.gs</code> with the downloaded script.</li><li>In Apps Script Project Settings, enable <b>Show appsscript.json manifest file in editor</b>. Replace that file with the <a href="/appsscript.json" download>ERP manifest</a>, then save.</li><li>Run <code>syncGmailToErp</code> once and approve Gmail access. Imported emails are marked read after their attachments are saved.</li><li>Run <code>installGmailSyncTrigger</code> once to sync automatically every 15 minutes.</li></ol><small>The script key is private. Google permission allows the script to read and mark messages read; it does not allow sending or permanently deleting mail.</small></div>
+    <div className="gmailConnectActions"><button className="primaryBtn" type="button" onClick={downloadGmailBridge} disabled={loading||!integrations?.gmail.storage_enabled}><Mail size={16}/>{integrations?.gmail.bridge_configured?'Reset key and download script':'Download Apps Script setup'}</button><small>{integrations?.gmail.bridge_configured?'Use the latest downloaded script; resetting disables older copies.':integrations?.gmail.storage_enabled?'One click creates a company-specific key and downloads the script.':'Enable R2 storage before importing attachments.'}</small></div>
+    {integrations?.gmail.client_configured&&<div className="gmailSetupHelp"><b>Existing Google OAuth option</b><p>You can also connect directly with Google if the OAuth client is already configured.</p><button className="secondaryBtn" type="button" onClick={connectGmail} disabled={loading}><Mail size={16}/>Connect directly</button></div>}
     <form className="settingsForm gmailSettingsForm" onSubmit={saveGmail}>
      <label>Email<input type="email" value={gmailForm.user} onChange={e=>setGmailForm({...gmailForm,user:e.target.value})} placeholder="name@gmail.com" required/></label>
      <label>Gmail label<input value={gmailForm.mailbox} onChange={e=>setGmailForm({...gmailForm,mailbox:e.target.value})} placeholder="INBOX"/></label>
@@ -138,7 +152,7 @@ export default function SettingsPage(){
      <div className="settingsActions">
       <button className="primaryBtn" type="submit" disabled={loading||!gmailForm.user}><Save size={16}/>Save Gmail</button>
       <button className="secondaryBtn" type="button" onClick={testGmail} disabled={loading||!integrations?.gmail.configured}><CheckCircle2 size={16}/>Test</button>
-      <button className="secondaryBtn" type="button" onClick={removeGmail} disabled={loading||!integrations?.gmail.configured}><Trash2 size={16}/>Disable Gmail and delete ERP copies</button>
+      <button className="secondaryBtn" type="button" onClick={removeGmail} disabled={loading||(!integrations?.gmail.configured&&!integrations?.gmail.bridge_configured)}><Trash2 size={16}/>Disable Gmail and delete ERP copies</button>
      </div>
     </form>
    </MasterPanel>

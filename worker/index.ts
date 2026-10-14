@@ -31,7 +31,7 @@ app.get('/health', health);
 registerAuth(app);
 app.use('/api/*', async (c, next) => {
   const method = c.req.method.toUpperCase();
-  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) || ['/api/auth/login', '/api/auth/logout', '/api/integrations/gmail/push'].includes(c.req.path)) return next();
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) || ['/api/auth/login', '/api/auth/logout', '/api/integrations/gmail/push', '/api/integrations/gmail/bridge/import'].includes(c.req.path)) return next();
   const originalRequest = c.req.raw.clone();
   await next();
   const actor = c.get('user');
