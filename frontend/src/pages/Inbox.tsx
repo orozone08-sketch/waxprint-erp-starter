@@ -1,11 +1,11 @@
-import {useEffect, useState} from 'react'
+import {useEffect, useRef, useState} from 'react'
 import {AlertTriangle, CheckCircle2, Inbox as InboxIcon, Mail, RefreshCw, Paperclip, Download} from 'lucide-react'
 import {downloadFile, getJson, postJson} from '../api'
 import {jumpTo} from '../ui'
 
 type InboxAttachment={id:number;filename:string;mime_type:string;size_bytes:number}
 type InboxMessage={id:number;source:string;sender:string|null;subject:string|null;received_at:string;archived:boolean;status:string;customer_id:number|null;job_id:number|null;attachments:InboxAttachment[]}
-type GmailStatus={enabled:boolean;configured:boolean;storage_enabled:boolean;mode:string;user:string;mailbox:string;fetch_query:string;fetch_limit:number}
+type GmailStatus={enabled:boolean;configured:boolean;client_configured:boolean;storage_enabled:boolean;mode:string;user:string;mailbox:string;fetch_query:string;fetch_limit:number}
 type GmailFetch={ok:boolean;message:string;fetched?:number;imported?:number;skipped_existing?:number;attachments_imported?:number;errors?:string[]}
 
 export default function Inbox(){
@@ -14,6 +14,8 @@ export default function Inbox(){
  const[notice,setNotice]=useState('')
  const[error,setError]=useState('')
  const[loading,setLoading]=useState(false)
+ const[connecting,setConnecting]=useState(false)
+ const autoFetchStarted=useRef(false)
 
  const load=()=>Promise.all([getJson<InboxMessage[]>('/api/inbox'),getJson<GmailStatus>('/api/integrations/gmail/status')]).then(([inbox,gmail])=>{setMessages(inbox);setStatus(gmail)})
  useEffect(()=>{load().catch(x=>setError(String(x)))},[])
@@ -28,15 +30,38 @@ export default function Inbox(){
   finally{setLoading(false)}
  }
 
+ const connectGmail=async()=>{
+  setConnecting(true);setError('');setNotice('')
+  try{
+   const result=await getJson<{url:string}>('/api/settings/gmail/connect-url?return_to=inbox')
+   window.location.assign(result.url)
+  }catch(x){setError(String(x));setConnecting(false)}
+ }
+
+ useEffect(()=>{
+  const result=new URLSearchParams(window.location.search).get('gmail')
+  if(result==='connected'&&!autoFetchStarted.current){
+   autoFetchStarted.current=true
+   window.history.replaceState(null,'','/?page=inbox')
+   setNotice('Google sign-in succeeded. Fetching Gmail now...')
+   void fetchGmail()
+  }else if(result==='error')setError('Google could not connect Gmail. Complete the one-time OAuth setup in Settings and try again.')
+  else if(result==='cancelled')setNotice('Google sign-in was cancelled.')
+ },[])
+
  return <section className="panel">
   <div className="inboxHeader">
    <div><h2>Files / Inbox</h2><p>Fetch Gmail enquiries, customer files and WhatsApp/manual intake records before production.</p></div>
-   {status?.configured?<button className="primaryBtn" onClick={fetchGmail} disabled={loading}><RefreshCw size={16}/>{loading?'Fetching...':'Fetch Gmail'}</button>:<a className="primaryBtn" href="/?page=settings#gmail"><Mail size={16}/>Connect Gmail</a>}
+   <div className="inboxHeaderActions">
+    <button className="secondaryBtn" onClick={connectGmail} disabled={connecting||!status?.client_configured}><Mail size={16}/>{connecting?'Opening Google...':status?.configured?'Change Gmail account':'Sign in with Google'}</button>
+    <button className="primaryBtn" onClick={fetchGmail} disabled={loading||!status?.configured}><RefreshCw size={16}/>{loading?'Fetching...':'Fetch Gmail'}</button>
+    {!status?.client_configured&&<a className="gmailSetupLink" href="/?page=settings#gmail">Google setup</a>}
+   </div>
   </div>
 
   <div className="gmailStatus">
    {status?.enabled&&status.configured?<CheckCircle2 size={18}/>:<AlertTriangle size={18}/>}
-   <span>{status?.enabled&&status.configured?`Gmail connected: ${status.user || 'configured account'} / ${status.mailbox} / ${status.fetch_query}${status.storage_enabled?' · downloaded files are saved in ERP storage':' · file storage must be enabled before Gmail files can be archived'}`:'Connect your Gmail account in Settings. Google will ask you to allow read-only access before mail and attachments can be fetched.'}</span>
+   <span>{status?.enabled&&status.configured?`Gmail connected: ${status.user || 'configured account'} / ${status.mailbox} / ${status.fetch_query}${status.storage_enabled?' · downloaded files are saved in ERP storage':' · file storage must be enabled before Gmail files can be archived'}`:status?.client_configured?'Click Sign in with Google above. After you approve access, the ERP will fetch Gmail automatically.':'Set up the Google OAuth client once in Settings > Gmail Intake. Then sign in here; fetched attachments are kept in ERP storage.'}</span>
   </div>
 
   {notice&&<div className="successBox">{notice}</div>}

@@ -228,6 +228,8 @@ tr:last-child td{border-bottom:0}
 .inboxHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px}
 .inboxHeader h2{margin:0 0 5px}
 .inboxHeader p{margin:0;color:#667085;font-size:13px}
+.inboxHeaderActions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.gmailSetupLink{font-size:12px;color:#536b82;font-weight:800;padding:8px 4px;white-space:nowrap}
 .primaryBtn{display:inline-flex;align-items:center;gap:8px;border:0;border-radius:8px;background:var(--wax);color:#fff;padding:10px 13px;font-weight:900;font-size:13px;cursor:pointer;box-shadow:0 10px 24px rgba(233,77,79,.2);white-space:nowrap}
 .primaryBtn:disabled{opacity:.65;cursor:not-allowed}
 .gmailStatus{display:flex;align-items:center;gap:9px;background:#f8fafc;border:1px solid #edf1f5;border-radius:8px;padding:11px 12px;color:#445464;font-size:13px;font-weight:700;margin-bottom:12px}
@@ -787,6 +789,7 @@ tr:last-child td{border-bottom:0}
  .statusRow em{display:none}
  .financeGrid,.miniStats,.stageGrid{grid-template-columns:1fr}
  .inboxHeader{flex-direction:column}
+ .inboxHeaderActions{justify-content:flex-start}
  .inboxStats{grid-template-columns:repeat(2,minmax(120px,1fr))}
  .magicsStats{grid-template-columns:repeat(2,minmax(120px,1fr))}
  .platformStats,.platformGrid{grid-template-columns:1fr}
