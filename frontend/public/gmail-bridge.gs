@@ -5,7 +5,7 @@ const MAX_MESSAGES_PER_RUN = 25;
 const MAX_MESSAGE_ATTACHMENT_BYTES = 24 * 1024 * 1024;
 const GMAIL_API = 'https://gmail.googleapis.com/gmail/v1/users/me/';
 
-/** Imports unread Gmail attachments into the WaxPrint ERP Inbox. */
+/** Copies unread Gmail attachments into the WaxPrint ERP Inbox without changing Gmail. */
 function syncGmailToErp() {
   if (ERP_BRIDGE_TOKEN === 'PASTE_ERP_BRIDGE_KEY_HERE') {
     throw new Error('Download a fresh script from ERP Settings so it contains your private bridge key.');
@@ -15,6 +15,7 @@ function syncGmailToErp() {
   const messages = listed.messages || [];
   let importedMessages = 0;
   let importedFiles = 0;
+  let skippedMessages = 0;
   let failedMessages = 0;
 
   messages.forEach(function (reference) {
@@ -36,10 +37,7 @@ function syncGmailToErp() {
         }
       });
 
-      if (!attachments.length) {
-        gmailApi('messages/' + encodeURIComponent(message.id) + '/modify', {}, 'post', { removeLabelIds: ['UNREAD'] });
-        return;
-      }
+      if (!attachments.length) return;
 
       const response = UrlFetchApp.fetch(ERP_IMPORT_URL, {
         method: 'post',
@@ -62,16 +60,19 @@ function syncGmailToErp() {
 
       const result = JSON.parse(response.getContentText());
       if (!result.ok) throw new Error('ERP did not confirm the import.');
-      importedMessages++;
-      importedFiles += Number(result.attachments_imported || 0);
-      gmailApi('messages/' + encodeURIComponent(message.id) + '/modify', {}, 'post', { removeLabelIds: ['UNREAD'] });
+      if (result.already_imported) {
+        skippedMessages++;
+      } else {
+        importedMessages++;
+        importedFiles += Number(result.attachments_imported || 0);
+      }
     } catch (error) {
       failedMessages++;
       console.error('Could not import Gmail message ' + reference.id + ': ' + error);
     }
   });
 
-  const summary = 'Imported ' + importedMessages + ' message(s), saved ' + importedFiles + ' file(s), failed ' + failedMessages + '.';
+  const summary = 'Imported ' + importedMessages + ' new message(s), saved ' + importedFiles + ' file(s), already in ERP ' + skippedMessages + ', failed ' + failedMessages + '. Gmail messages were left unchanged.';
   console.log(summary);
   return summary;
 }
