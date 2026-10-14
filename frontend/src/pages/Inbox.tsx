@@ -31,12 +31,12 @@ export default function Inbox(){
  return <section className="panel">
   <div className="inboxHeader">
    <div><h2>Files / Inbox</h2><p>Fetch Gmail enquiries, customer files and WhatsApp/manual intake records before production.</p></div>
-   <button className="primaryBtn" onClick={fetchGmail} disabled={loading}><RefreshCw size={16}/>{loading?'Fetching...':'Fetch Gmail'}</button>
+   {status?.configured?<button className="primaryBtn" onClick={fetchGmail} disabled={loading}><RefreshCw size={16}/>{loading?'Fetching...':'Fetch Gmail'}</button>:<a className="primaryBtn" href="/?page=settings#gmail"><Mail size={16}/>Connect Gmail</a>}
   </div>
 
   <div className="gmailStatus">
    {status?.enabled&&status.configured?<CheckCircle2 size={18}/>:<AlertTriangle size={18}/>}
-   <span>{status?.enabled&&status.configured?`Gmail connected: ${status.user || 'configured account'} / ${status.mailbox} / ${status.fetch_query}${status.storage_enabled?' · downloaded files are saved in ERP storage':' · file storage must be enabled before Gmail files can be archived'}`:'Gmail not configured yet. Add Gmail from Settings > Gmail Intake.'}</span>
+   <span>{status?.enabled&&status.configured?`Gmail connected: ${status.user || 'configured account'} / ${status.mailbox} / ${status.fetch_query}${status.storage_enabled?' · downloaded files are saved in ERP storage':' · file storage must be enabled before Gmail files can be archived'}`:'Connect your Gmail account in Settings. Google will ask you to allow read-only access before mail and attachments can be fetched.'}</span>
   </div>
 
   {notice&&<div className="successBox">{notice}</div>}

@@ -47,7 +47,7 @@ export function userPayload(user: Row) {
 }
 export function registerAuth(app: Hono<Env>) {
   app.use('/api/*', async (c, next) => {
-    if (c.req.path === '/api/auth/login' || c.req.path === '/api/auth/logout' || c.req.path === '/api/companies' || c.req.path === '/api/health' || c.req.path.startsWith('/api/magics/agent/')) return next();
+    if (c.req.path === '/api/auth/login' || c.req.path === '/api/auth/logout' || c.req.path === '/api/companies' || c.req.path === '/api/health' || c.req.path === '/api/integrations/gmail/callback' || c.req.path.startsWith('/api/magics/agent/')) return next();
     if (c.req.path === '/api/integrations/gmail/push') {
       if (!c.env.GMAIL_PUSH_TOKEN || c.req.header('authorization') !== `Bearer ${c.env.GMAIL_PUSH_TOKEN}`) fail(401, 'Invalid webhook token');
       return next();

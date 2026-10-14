@@ -6,7 +6,7 @@ type Customer={id:number;code:string;name:string;email:string|null;whatsapp:stri
 type Supplier={id:number;code:string;name:string;gst_number:string|null;contact:string|null}
 type Machine={id:number;code:string;name:string;model:string|null;serial_number:string|null;status:string}
 type Material={id:number;code:string;name:string;unit:string;stock:number;minimum_stock:number}
-type Integrations={gmail:{enabled:boolean;configured:boolean;storage_enabled:boolean;mode:string;user:string;mailbox:string;fetch_query:string;fetch_limit:number;archive_label:string};magics:{agent_token_configured:boolean;workstation_default:string;local_agent_folder:string;queue_endpoint:string}}
+type Integrations={gmail:{enabled:boolean;configured:boolean;client_configured:boolean;storage_enabled:boolean;mode:string;user:string;mailbox:string;fetch_query:string;fetch_limit:number;redirect_uri:string;archive_label:string};magics:{agent_token_configured:boolean;workstation_default:string;local_agent_folder:string;queue_endpoint:string}}
 type GmailSave={ok:boolean;message:string;gmail:Integrations['gmail']}
 type GmailTest={ok:boolean;message:string;gmail:Integrations['gmail']}
 
@@ -52,7 +52,7 @@ export default function SettingsPage(){
    fetch_limit:String(i.gmail.fetch_limit||25)
   }))
  }
- useEffect(()=>{load().catch(x=>setError(String(x)))},[])
+ useEffect(()=>{load().catch(x=>setError(String(x)));const result=new URLSearchParams(window.location.search).get('gmail');if(result==='connected')setNotice('Gmail connected. Save your intake filters, then click Fetch Gmail in Files / Inbox.');else if(result==='error')setError('Google could not connect Gmail. Check the OAuth client and approved redirect URL, then try again.');else if(result==='cancelled')setNotice('Gmail connection was cancelled.')},[])
 
  const run=async(action:()=>Promise<unknown>,message:string)=>{
   setLoading(true);setError('');setNotice('')
@@ -79,6 +79,10 @@ export default function SettingsPage(){
   if(!result.ok)throw new Error(result.message)
   setIntegrations(current=>current?{...current,gmail:result.gmail}:current)
  },'Gmail connected successfully.')
+ const connectGmail=()=>run(async()=>{
+  const result=await getJson<{url:string}>('/api/settings/gmail/connect-url')
+  window.location.assign(result.url)
+ },'Opening Google sign-in...')
  const removeGmail=()=>run(async()=>{
   const saved=await postJson<GmailSave>('/api/settings/gmail',{
    enabled:false,
@@ -116,15 +120,16 @@ export default function SettingsPage(){
   <section className="settingsGrid subPanel">
    <MasterPanel panelRef={gmailRef} active={highlight==='gmail'} icon={<Mail size={18}/>} title="Gmail Intake">
     <div className="integrationRows">
-     <Info label="Enabled" value={integrations?.gmail.enabled?'Yes':'No'}/>
-     <Info label="Configured" value={integrations?.gmail.configured?'Yes':'No'}/>
+     <Info label="Connection" value={integrations?.gmail.configured?'Connected':'Not connected'}/>
+     <Info label="Google app" value={integrations?.gmail.client_configured?'Ready':'Needs one-time setup'}/>
      <Info label="Attachment storage" value={integrations?.gmail.storage_enabled?'R2 ready':'Enable R2 first'}/>
-     <Info label="Mode" value={integrations?.gmail.mode||'none'}/>
      <Info label="Account" value={integrations?.gmail.user||'Not set'}/>
      <Info label="Gmail label" value={integrations?.gmail.mailbox||'INBOX'}/>
      <Info label="Fetch" value={`${integrations?.gmail.fetch_query||'is:unread'} / ${integrations?.gmail.fetch_limit||0}`}/>
     </div>
-    <p>Gmail uses a secure OAuth connection. Your administrator must configure the Gmail client ID, client secret and refresh token in Cloudflare. Then save the account and intake filters here.</p>
+    <p>Sign in to the Gmail account you want the ERP to read. Google asks you to approve read-only email access; the ERP stores the returned refresh token encrypted and saves attached files in R2. A Google OAuth app must be set up once for this website.</p>
+    {!integrations?.gmail.client_configured&&<div className="gmailSetupHelp"><b>One-time Google setup</b><ol><li>In Google Cloud Console, enable the Gmail API and create an OAuth client with type <b>Web application</b>.</li><li>Add this authorized redirect URL: <code>{integrations?.gmail.redirect_uri||'https://waxprint-erp.orozone08.workers.dev/api/integrations/gmail/callback'}</code>.</li><li>From the ERP project folder in PowerShell, run <code>npx.cmd wrangler secret put GMAIL_CLIENT_ID</code> and <code>npx.cmd wrangler secret put GMAIL_CLIENT_SECRET</code>. Enter the values from Google Cloud when prompted.</li></ol></div>}
+    <div className="gmailConnectActions"><button className="primaryBtn" type="button" onClick={connectGmail} disabled={loading||!integrations?.gmail.client_configured}><Mail size={16}/>{integrations?.gmail.configured?'Reconnect Gmail with Google':'Connect with Google'}</button><small>{integrations?.gmail.client_configured?'Google opens a secure sign-in window.':'Complete the one-time Google app setup above first.'}</small></div>
     <form className="settingsForm gmailSettingsForm" onSubmit={saveGmail}>
      <label>Email<input type="email" value={gmailForm.user} onChange={e=>setGmailForm({...gmailForm,user:e.target.value})} placeholder="name@gmail.com" required/></label>
      <label>Gmail label<input value={gmailForm.mailbox} onChange={e=>setGmailForm({...gmailForm,mailbox:e.target.value})} placeholder="INBOX"/></label>
