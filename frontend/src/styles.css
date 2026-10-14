@@ -254,6 +254,8 @@ tr:last-child td{border-bottom:0}
 .secondaryBtn{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:8px;background:#fff;color:#25384a;padding:10px 13px;font-weight:900;font-size:13px;cursor:pointer;white-space:nowrap}
 .secondaryBtn:disabled,.miniBtn:disabled{opacity:.62;cursor:not-allowed}
 .magicsSetup{display:grid;grid-template-columns:repeat(3,minmax(180px,1fr));gap:10px;margin-bottom:14px}
+.magicsInstructions{background:#f2f8fc;border:1px solid #d7e8f3;border-radius:8px;padding:12px 14px;color:#36536a;font-size:13px}
+.magicsInstructions code{background:#e6eef4;border-radius:4px;padding:1px 4px;color:#18344a}
 .setupCard{display:flex;align-items:center;gap:11px;background:#f8fafc;border:1px solid #edf1f5;border-radius:8px;padding:12px}
 .setupCard svg{color:var(--wax);flex:0 0 auto}
 .setupCard b{display:block;color:#132838;font-size:13px}

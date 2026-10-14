@@ -4,7 +4,8 @@ import {getJson, postJson} from '../api'
 import {jumpTo} from '../ui'
 
 type MagicsSession={id:number;operator:string;workstation:string;status:string;checker:string|null;approved:boolean;started_at:string;completed_at:string|null}
-type MagicsJob={id:number;number:string;customer:string;source:string;priority:string;status:string;received_at:string;file_count:number;latest_session:MagicsSession|null}
+type MagicsFile={id:number;name:string;processed:boolean;original_url:string;download_url:string}
+type MagicsJob={id:number;number:string;customer:string;source:string;priority:string;status:string;received_at:string;file_count:number;processed_file_count:number;files:MagicsFile[];latest_session:MagicsSession|null}
 type SessionRow=MagicsSession&{job_id:number;job_number:string;customer:string;job_status:string}
 
 export default function Magics(){
@@ -38,8 +39,13 @@ export default function Magics(){
 
   <div className="magicsSetup">
    <button className="setupCard clickableStat" type="button" onClick={()=>jumpTo('magics-queue')}><Wrench size={19}/><span><b>ERP queue</b><small>{queue.length} job(s) visible for Magics workflow</small></span></button>
-   <button className="setupCard clickableStat" type="button" onClick={()=>jumpTo('magics-history')}><FolderOpen size={19}/><span><b>Local agent</b><small>Run `python agent.py` from `magics_agent` on the Magics PC</small></span></button>
-   <button className="setupCard clickableStat" type="button" onClick={()=>jumpTo('magics-queue')}><BadgeCheck size={19}/><span><b>Approval gate</b><small>Approved jobs move to machine-software platform preparation</small></span></button>
+   <div className="setupCard"><FolderOpen size={19}/><span><b>Magics PC bridge</b><small>Run the included Python bridge on the other PC where Magics is installed.</small></span></div>
+   <button className="setupCard clickableStat" type="button" onClick={()=>jumpTo('magics-queue')}><BadgeCheck size={19}/><span><b>Approval gate</b><small>Each job needs a processed file before checker approval.</small></span></button>
+  </div>
+
+  <div className="magicsInstructions" style={{margin:'14px 0',lineHeight:1.65}}>
+   <b>Connect the PC with Magics</b><br/>
+   On that PC, copy the <code>magics_agent</code> folder from this project. In PowerShell, open that folder and run <code>py -m pip install -r requirements.txt</code>. Copy <code>.env.example</code> to <code>.env</code>, then enter the ERP URL, the same AGENT_TOKEN configured as a Cloudflare Worker secret, and company ID <code>1</code> (Aditya) or <code>2</code> (Sunmoon). Start the bridge with <code>py agent.py</code> and keep it running. Open each downloaded file from its job's <code>Original</code> folder in Magics, save the repaired version to that job's <code>Processed</code> folder as <code>file-id__original-name.stl</code>, and the bridge uploads it. Magics itself stays on its installed PC.
   </div>
 
   <div className="magicsForm">
@@ -62,7 +68,7 @@ export default function Magics(){
    <div className="panelHead"><h2>Repair Queue</h2><small>Waiting and active jobs</small></div>
    <table>
     <thead><tr><th>Job</th><th>Customer</th><th>Files</th><th>Status</th><th>Latest Session</th><th>Action</th></tr></thead>
-    <tbody>{queue.map(j=><tr key={j.id}><td><b>{j.number}</b><small className="mutedCell">{j.priority}</small></td><td>{j.customer}</td><td>{j.file_count}</td><td><span className="badge">{pretty(j.status)}</span></td><td>{j.latest_session?<span>{j.latest_session.operator}<small className="mutedCell">{pretty(j.latest_session.status)}</small></span>:'-'}</td><td><Actions job={j} disabled={loading} start={()=>run(()=>postJson(`/api/jobs/${j.id}/magics/start`,{operator_name:operator,workstation}),`${j.number} Magics repair started.`)} approve={()=>run(()=>postJson(`/api/jobs/${j.id}/magics/complete`,{checker_name:checker,approved:true}),`${j.number} approved by checker.`)} reject={()=>run(()=>postJson(`/api/jobs/${j.id}/magics/complete`,{checker_name:checker,approved:false}),`${j.number} sent back for repair.`)}/></td></tr>)}</tbody>
+    <tbody>{queue.map(j=><tr key={j.id}><td><b>{j.number}</b><small className="mutedCell">{j.priority}</small></td><td>{j.customer}</td><td><b>{j.processed_file_count}/{j.file_count} processed</b>{j.files.map(f=><small className="mutedCell" key={f.id}>{f.name} · <a href={f.original_url}>Original</a>{f.processed&&<> · <a href={f.download_url}>Magics output</a></>}</small>)}</td><td><span className="badge">{pretty(j.status)}</span></td><td>{j.latest_session?<span>{j.latest_session.operator}<small className="mutedCell">{pretty(j.latest_session.status)}</small></span>:'-'}</td><td><Actions job={j} disabled={loading} start={()=>run(()=>postJson(`/api/jobs/${j.id}/magics/start`,{operator_name:operator,workstation}),`${j.number} Magics repair started.`)} approve={()=>run(()=>postJson(`/api/jobs/${j.id}/magics/complete`,{checker_name:checker,approved:true}),`${j.number} approved by checker.`)} reject={()=>run(()=>postJson(`/api/jobs/${j.id}/magics/complete`,{checker_name:checker,approved:false}),`${j.number} sent back for repair.`)}/></td></tr>)}</tbody>
    </table>
    {!queue.length&&<div className="emptyState inboxEmpty"><Clock3 size={30}/><p>No jobs waiting for Magics.</p></div>}
   </section>
@@ -79,7 +85,7 @@ export default function Magics(){
 
 function Actions({job,disabled,start,approve,reject}:{job:MagicsJob;disabled:boolean;start:()=>void;approve:()=>void;reject:()=>void}){
  if(job.status==='READY_MACHINE_SOFTWARE')return <span className="ok">Approved</span>
- if(job.latest_session?.status==='STARTED'||job.status==='MAGICS_REPAIR')return <div className="rowActions"><button className="miniBtn good" onClick={approve} disabled={disabled}><BadgeCheck size={14}/>Approve</button><button className="miniBtn warn" onClick={reject} disabled={disabled}><XCircle size={14}/>Reject</button></div>
+ if(job.latest_session?.status==='STARTED'||job.status==='MAGICS_REPAIR')return <div className="rowActions"><button className="miniBtn good" onClick={approve} disabled={disabled||job.file_count===0||job.processed_file_count<job.file_count} title={job.processed_file_count<job.file_count?'Waiting for processed files from the Magics PC':''}><BadgeCheck size={14}/>Approve</button><button className="miniBtn warn" onClick={reject} disabled={disabled}><XCircle size={14}/>Reject</button></div>
  return <button className="miniBtn" onClick={start} disabled={disabled}><Play size={14}/>Start</button>
 }
 
