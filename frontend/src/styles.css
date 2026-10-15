@@ -245,6 +245,8 @@ tr:last-child td{border-bottom:0}
 .inboxStat strong{display:block;color:#132838;font-size:24px;line-height:1}
 .sourceCell{display:inline-flex;align-items:center;gap:6px;text-transform:capitalize}
 .inboxAttachments{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}
+.emailMessageLink{display:inline-flex;align-items:center;gap:4px;margin-top:5px;color:#24628b;font-size:11px;font-weight:800;text-decoration:none}
+.emailMessageLink:hover{text-decoration:underline}
 .attachmentLink{display:inline-flex;align-items:center;gap:5px;border:1px solid #dbe4ec;border-radius:6px;background:#fff;color:#17456b;padding:5px 7px;font-size:11px;font-weight:800;cursor:pointer}
 .attachmentLink:hover{border-color:#9dc3df;background:#f4faff}
 .attachmentLink small{color:#667085;font-weight:600}

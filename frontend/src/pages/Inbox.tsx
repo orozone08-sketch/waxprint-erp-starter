@@ -1,10 +1,10 @@
 import {useEffect, useRef, useState} from 'react'
-import {AlertTriangle, CheckCircle2, Inbox as InboxIcon, Mail, RefreshCw, Paperclip, Download} from 'lucide-react'
+import {AlertTriangle, CheckCircle2, Inbox as InboxIcon, Mail, RefreshCw, Paperclip, Download, ExternalLink} from 'lucide-react'
 import {downloadFile, getJson, postJson} from '../api'
 import {jumpTo} from '../ui'
 
 type InboxAttachment={id:number;filename:string;mime_type:string;size_bytes:number}
-type InboxMessage={id:number;source:string;sender:string|null;subject:string|null;received_at:string;archived:boolean;status:string;customer_id:number|null;job_id:number|null;attachments:InboxAttachment[]}
+type InboxMessage={id:number;source:string;external_message_id:string|null;sender:string|null;subject:string|null;received_at:string;archived:boolean;status:string;customer_id:number|null;job_id:number|null;attachments:InboxAttachment[]}
 type GmailStatus={enabled:boolean;configured:boolean;client_configured:boolean;bridge_configured:boolean;storage_enabled:boolean;mode:string;user:string;mailbox:string;fetch_query:string;fetch_limit:number}
 type GmailFetch={ok:boolean;message:string;fetched?:number;imported?:number;skipped_existing?:number;attachments_imported?:number;errors?:string[]}
 
@@ -61,7 +61,7 @@ export default function Inbox(){
 
   <div className="gmailStatus">
    {status?.enabled&&status.configured?<CheckCircle2 size={18}/>:<AlertTriangle size={18}/>}
-   <span>{status?.enabled&&status.configured?`Gmail connected: ${status.user || 'configured account'} / ${status.mailbox} / ${status.fetch_query}${status.storage_enabled?' · downloaded files are saved in ERP storage':' · file storage must be enabled before Gmail files can be archived'}`:status?.bridge_configured?'Finish the Apps Script setup in Settings. After you authorize it, Gmail attachments will sync automatically every 15 minutes.':status?.client_configured?'Click Sign in with Google above. After you approve access, the ERP will fetch Gmail automatically.':'Set up Gmail in Settings to start importing email attachments into the ERP Inbox.'}</span>
+   <span>{status?.enabled&&status.configured?`Gmail connected: ${status.user || 'configured account'} / ${status.mailbox} / ${status.fetch_query}${status.storage_enabled?' · downloaded files are saved in ERP storage':' · file storage must be enabled before Gmail files can be archived'}`:status?.bridge_configured?'Apps Script bridge is ready. Run syncGmailToErp in Apps Script to fetch files now; Refresh Inbox only reloads files already saved. The automatic trigger runs every 15 minutes.':status?.client_configured?'Click Sign in with Google above. After you approve access, the ERP will fetch Gmail automatically.':'Set up Gmail in Settings to start importing email attachments into the ERP Inbox.'}</span>
   </div>
 
   {notice&&<div className="successBox">{notice}</div>}
@@ -76,7 +76,7 @@ export default function Inbox(){
 
   <table id="inbox-ledger">
    <thead><tr><th>Source</th><th>From</th><th>Subject / Files</th><th>Received</th><th>Status</th><th>Links</th></tr></thead>
-   <tbody>{messages.map(m=><tr key={m.id}><td><span className="sourceCell"><Mail size={14}/>{m.source}</span></td><td>{m.sender||'-'}</td><td><b>{m.subject||'(no subject)'}</b>{m.attachments?.length>0&&<div className="inboxAttachments">{m.attachments.map(file=><button key={file.id} type="button" className="attachmentLink" onClick={()=>downloadFile(`/api/inbox/attachments/${file.id}/download`,file.filename).catch(x=>setError(String(x)))}><Download size={13}/>{file.filename}<small>{formatSize(file.size_bytes)}</small></button>)}</div>}</td><td>{formatDate(m.received_at)}</td><td><span className="badge">{m.status}</span></td><td>{m.customer_id?`Customer #${m.customer_id}`:'-'}{m.job_id?` / Job #${m.job_id}`:''}{m.source==='gmail'&&<small className="attachmentCount"><Paperclip size={12}/>{m.attachments?.length??0} saved files</small>}</td></tr>)}</tbody>
+   <tbody>{messages.map(m=><tr key={m.id}><td><span className="sourceCell"><Mail size={14}/>{m.source}</span></td><td>{m.sender||'-'}</td><td><b>{m.subject||'(no subject)'}</b>{m.source==='gmail'&&<div><a className="emailMessageLink" href={gmailSearchUrl(m)} target="_blank" rel="noreferrer"><ExternalLink size={13}/>Open email in Gmail</a></div>}{m.attachments?.length>0&&<div className="inboxAttachments">{m.attachments.map(file=><button key={file.id} type="button" className="attachmentLink" onClick={()=>downloadFile(`/api/inbox/attachments/${file.id}/download`,file.filename).catch(x=>setError(String(x)))}><Download size={13}/>{file.filename}<small>{formatSize(file.size_bytes)}</small></button>)}</div>}</td><td>{formatDate(m.received_at)}</td><td><span className="badge">{m.status}</span></td><td>{m.customer_id?`Customer #${m.customer_id}`:'-'}{m.job_id?` / Job #${m.job_id}`:''}{m.source==='gmail'&&<small className="attachmentCount"><Paperclip size={12}/>{m.attachments?.length??0} saved files</small>}</td></tr>)}</tbody>
   </table>
   {!messages.length&&<div className="emptyState inboxEmpty"><InboxIcon size={30}/><p>No inbox messages yet.</p></div>}
  </section>
@@ -95,4 +95,19 @@ function formatSize(size:number){
  if(size<1024)return `${size} B`
  if(size<1024*1024)return `${(size/1024).toFixed(1)} KB`
  return `${(size/1024/1024).toFixed(1)} MB`
+}
+
+function gmailSearchUrl(message:InboxMessage){
+ const terms:string[]=[]
+ if(message.subject)terms.push(`subject:"${message.subject.replace(/["\\]/g,' ').trim()}"`)
+ const email=message.sender?.match(/<([^>]+)>/)?.[1]||message.sender?.match(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/)?.[0]
+ if(email)terms.push(`from:${email}`)
+ const date=new Date(message.received_at)
+ if(!Number.isNaN(date.valueOf())){
+  const floor=new Date(date);floor.setDate(floor.getDate()-1)
+  const ceil=new Date(date);ceil.setDate(ceil.getDate()+2)
+  const day=(value:Date)=>`${value.getFullYear()}/${String(value.getMonth()+1).padStart(2,'0')}/${String(value.getDate()).padStart(2,'0')}`
+  terms.push(`after:${day(floor)}`,`before:${day(ceil)}`)
+ }
+ return `https://mail.google.com/mail/u/0/#search/${encodeURIComponent(terms.join(' ')||message.external_message_id||'in:inbox')}`
 }
