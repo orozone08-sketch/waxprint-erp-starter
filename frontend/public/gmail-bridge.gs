@@ -1,78 +1,110 @@
-const ERP_IMPORT_URL = 'https://waxprint-erp.orozone08.workers.dev/api/integrations/gmail/bridge/import';
+const ERP_BRIDGE_BASE = 'https://waxprint-erp.orozone08.workers.dev/api/integrations/gmail/bridge';
 const ERP_BRIDGE_TOKEN = 'PASTE_ERP_BRIDGE_KEY_HERE';
-const GMAIL_SEARCH_QUERY = 'is:unread has:attachment';
-const MAX_MESSAGES_PER_RUN = 25;
-const MAX_MESSAGE_ATTACHMENT_BYTES = 24 * 1024 * 1024;
+const GMAIL_SEARCH_QUERY = 'newer_than:30d has:attachment filename:stl';
+const MAX_NEW_MESSAGES_PER_RUN = 25;
+const MAX_GMAIL_MESSAGES_TO_SCAN = 500;
+const MAX_ATTACHMENT_BYTES = 45 * 1024 * 1024;
 const GMAIL_API = 'https://gmail.googleapis.com/gmail/v1/users/me/';
 
-/** Copies unread Gmail attachments into the WaxPrint ERP Inbox without changing Gmail. */
+/** Imports recent Gmail messages with print files. Gmail is only read, never changed. */
 function syncGmailToErp() {
-  if (ERP_BRIDGE_TOKEN === 'PASTE_ERP_BRIDGE_KEY_HERE') {
-    throw new Error('Download a fresh script from ERP Settings so it contains your private bridge key.');
+  if (!ERP_BRIDGE_TOKEN || ERP_BRIDGE_TOKEN === 'PASTE_ERP_BRIDGE_KEY_HERE') {
+    throw new Error('Download the latest Gmail bridge script from ERP Settings.');
   }
 
-  const listed = gmailApi('messages', { q: GMAIL_SEARCH_QUERY, maxResults: MAX_MESSAGES_PER_RUN });
-  const messages = listed.messages || [];
+  let pageToken = '';
+  let scanned = 0;
+  let attempted = 0;
   let importedMessages = 0;
   let importedFiles = 0;
   let skippedMessages = 0;
   let failedMessages = 0;
 
-  messages.forEach(function (reference) {
-    try {
-      const message = gmailApi('messages/' + encodeURIComponent(reference.id), { format: 'full' });
-      const headers = (message.payload && message.payload.headers) || [];
-      const header = function (name) {
-        const item = headers.find(function (entry) { return entry.name.toLowerCase() === name; });
-        return item ? item.value : '';
-      };
-      const attachments = [];
-      const bodyParts = [];
-      let totalBytes = 0;
+  while (scanned < MAX_GMAIL_MESSAGES_TO_SCAN && attempted < MAX_NEW_MESSAGES_PER_RUN) {
+    const params = { q: GMAIL_SEARCH_QUERY, maxResults: 100 };
+    if (pageToken) params.pageToken = pageToken;
+    const listed = gmailApi('messages', params);
+    const messages = listed.messages || [];
+    if (!messages.length) break;
 
-      collectParts(message.id, message.payload || {}, attachments, bodyParts, function (size) {
-        totalBytes += size;
-        if (totalBytes > MAX_MESSAGE_ATTACHMENT_BYTES) {
-          throw new Error('Attachments exceed the 24 MB per-email bridge limit.');
-        }
-      });
+    for (let i = 0; i < messages.length && scanned < MAX_GMAIL_MESSAGES_TO_SCAN && attempted < MAX_NEW_MESSAGES_PER_RUN; i++) {
+      const reference = messages[i];
+      scanned++;
+      try {
+        const message = gmailApi('messages/' + encodeURIComponent(reference.id), { format: 'full' });
+        const headers = (message.payload && message.payload.headers) || [];
+        const header = function (name) {
+          const item = headers.find(function (entry) { return entry.name.toLowerCase() === name; });
+          return item ? item.value : '';
+        };
+        const attachments = [];
+        const bodyParts = [];
+        collectParts(message.payload || {}, attachments, bodyParts, '0');
+        if (!attachments.length) continue;
 
-      if (!attachments.length) return;
-
-      const response = UrlFetchApp.fetch(ERP_IMPORT_URL, {
-        method: 'post',
-        contentType: 'application/json',
-        headers: { Authorization: 'Bearer ' + ERP_BRIDGE_TOKEN },
-        payload: JSON.stringify({
+        const started = bridgeJson('message', {
           message_id: message.id,
           sender: header('from'),
           subject: header('subject'),
           body: bodyParts.join('\n\n').slice(0, 8000) || message.snippet || '',
-          received_at: new Date(Number(message.internalDate)).toISOString(),
-          attachments: attachments
-        }),
-        muteHttpExceptions: true
-      });
-      const status = response.getResponseCode();
-      if (status < 200 || status >= 300) {
-        throw new Error('ERP returned ' + status + ': ' + response.getContentText().slice(0, 300));
-      }
+          received_at: new Date(Number(message.internalDate)).toISOString()
+        });
+        if (started.already_imported) {
+          skippedMessages++;
+          continue;
+        }
+        attempted++;
 
-      const result = JSON.parse(response.getContentText());
-      if (!result.ok) throw new Error('ERP did not confirm the import.');
-      if (result.already_imported) {
-        skippedMessages++;
-      } else {
+        let savedForMessage = 0;
+        attachments.forEach(function (attachment) {
+          let data = attachment.data || '';
+          if (attachment.attachmentId) {
+            const result = gmailApi('messages/' + encodeURIComponent(message.id) + '/attachments/' + encodeURIComponent(attachment.attachmentId), {});
+            data = result.data || '';
+          }
+          const bytes = Utilities.base64DecodeWebSafe(data);
+          if (bytes.length > MAX_ATTACHMENT_BYTES) {
+            throw new Error(attachment.filename + ' is larger than the 45 MB file limit.');
+          }
+          const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, bytes)
+            .map(function (value) { return (value & 255).toString(16).padStart(2, '0'); }).join('');
+          const response = UrlFetchApp.fetch(ERP_BRIDGE_BASE + '/attachment', {
+            method: 'post',
+            contentType: 'application/octet-stream',
+            headers: {
+              Authorization: 'Bearer ' + ERP_BRIDGE_TOKEN,
+              'X-Gmail-Message-Id': message.id,
+              'X-Gmail-Part-Key': attachment.partKey,
+              'X-Gmail-Filename': encodeURIComponent(attachment.filename),
+              'X-Gmail-Mime-Type': attachment.mimeType,
+              'X-Gmail-SHA256': digest
+            },
+            payload: bytes,
+            muteHttpExceptions: true
+          });
+          const status = response.getResponseCode();
+          if (status < 200 || status >= 300) {
+            throw new Error('ERP file upload returned ' + status + ': ' + response.getContentText().slice(0, 250));
+          }
+          const result = JSON.parse(response.getContentText());
+          if (!result.ok) throw new Error('ERP did not confirm the file upload.');
+          if (!result.already_imported) savedForMessage++;
+        });
+
+        bridgeJson('complete', { message_id: message.id });
         importedMessages++;
-        importedFiles += Number(result.attachments_imported || 0);
+        importedFiles += savedForMessage;
+      } catch (error) {
+        failedMessages++;
+        console.error('Could not import Gmail message ' + reference.id + ': ' + error);
       }
-    } catch (error) {
-      failedMessages++;
-      console.error('Could not import Gmail message ' + reference.id + ': ' + error);
     }
-  });
 
-  const summary = 'Imported ' + importedMessages + ' new message(s), saved ' + importedFiles + ' file(s), already in ERP ' + skippedMessages + ', failed ' + failedMessages + '. Gmail messages were left unchanged.';
+    pageToken = listed.nextPageToken || '';
+    if (!pageToken) break;
+  }
+
+  const summary = 'Imported ' + importedMessages + ' new message(s), saved ' + importedFiles + ' file(s), already in ERP ' + skippedMessages + ', failed ' + failedMessages + '. Scanned ' + scanned + ' Gmail message(s).';
   console.log(summary);
   return summary;
 }
@@ -86,21 +118,33 @@ function installGmailSyncTrigger() {
   console.log('Automatic Gmail sync is scheduled every 15 minutes.');
 }
 
-function gmailApi(path, params, method, payload) {
-  const url = GMAIL_API + path + (Object.keys(params).length ? '?' + toQuery(params) : '');
-  const options = {
-    method: method || 'get',
-    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+function bridgeJson(endpoint, payload) {
+  const response = UrlFetchApp.fetch(ERP_BRIDGE_BASE + '/' + endpoint, {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { Authorization: 'Bearer ' + ERP_BRIDGE_TOKEN },
+    payload: JSON.stringify(payload),
     muteHttpExceptions: true
-  };
-  if (payload) {
-    options.contentType = 'application/json';
-    options.payload = JSON.stringify(payload);
-  }
-  const response = UrlFetchApp.fetch(url, options);
+  });
   const status = response.getResponseCode();
   if (status < 200 || status >= 300) {
-    throw new Error('Gmail API returned ' + status + ': ' + response.getContentText().slice(0, 300));
+    throw new Error('ERP ' + endpoint + ' returned ' + status + ': ' + response.getContentText().slice(0, 250));
+  }
+  const result = JSON.parse(response.getContentText());
+  if (!result.ok) throw new Error('ERP did not confirm ' + endpoint + '.');
+  return result;
+}
+
+function gmailApi(path, params) {
+  const url = GMAIL_API + path + (Object.keys(params).length ? '?' + toQuery(params) : '');
+  const response = UrlFetchApp.fetch(url, {
+    method: 'get',
+    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+    muteHttpExceptions: true
+  });
+  const status = response.getResponseCode();
+  if (status < 200 || status >= 300) {
+    throw new Error('Gmail API returned ' + status + ': ' + response.getContentText().slice(0, 250));
   }
   return response.getContentText() ? JSON.parse(response.getContentText()) : {};
 }
@@ -111,26 +155,21 @@ function toQuery(params) {
   }).join('&');
 }
 
-function collectParts(messageId, part, attachments, bodyParts, countBytes) {
+function collectParts(part, attachments, bodyParts, path) {
   const filename = (part.filename || '').trim();
   if (filename && part.body && (part.body.attachmentId || part.body.data)) {
-    let data = part.body.data || '';
-    if (part.body.attachmentId) {
-      const result = gmailApi('messages/' + encodeURIComponent(messageId) + '/attachments/' + encodeURIComponent(part.body.attachmentId), {});
-      data = result.data || '';
-    }
-    const bytes = Utilities.base64DecodeWebSafe(data);
-    countBytes(bytes.length);
     attachments.push({
       filename: filename,
-      mime_type: part.mimeType || 'application/octet-stream',
-      data: Utilities.base64Encode(bytes)
+      mimeType: part.mimeType || 'application/octet-stream',
+      partKey: String(part.partId || path),
+      attachmentId: part.body.attachmentId || '',
+      data: part.body.data || ''
     });
   } else if (part.mimeType === 'text/plain' && part.body && part.body.data) {
     const bytes = Utilities.base64DecodeWebSafe(part.body.data);
     bodyParts.push(Utilities.newBlob(bytes).getDataAsString('UTF-8'));
   }
-  (part.parts || []).forEach(function (child) {
-    collectParts(messageId, child, attachments, bodyParts, countBytes);
+  (part.parts || []).forEach(function (child, index) {
+    collectParts(child, attachments, bodyParts, path + '.' + index);
   });
 }

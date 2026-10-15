@@ -62,6 +62,17 @@ function gmailB64(bytes:Uint8Array){return btoa(String.fromCharCode(...bytes)).r
 function gmailUnb64(value:string){return Uint8Array.from(atob(value.replaceAll('-','+').replaceAll('_','/')),x=>x.charCodeAt(0));}
 function gmailHex(bytes:ArrayBuffer){return Array.from(new Uint8Array(bytes)).map(value=>value.toString(16).padStart(2,'0')).join('');}
 async function gmailBridgeHash(token:string){return gmailHex(await crypto.subtle.digest('SHA-256',gmailEncoder.encode(token)));}
+async function requireGmailBridge(c:C){
+ const token=(c.req.header('authorization')||'').replace(/^Bearer\s+/i,'');
+ if(!token)throw fail(401,'Missing Gmail bridge key');
+ const hash=await gmailBridgeHash(token);
+ for(const [companyId,db] of [[1,c.env.DB],[2,c.env.DB_SUNMOON]] as Array<[number,D1Database|undefined]>){
+  if(!db)continue;
+  const setting=await db.prepare("SELECT value FROM integration_settings WHERE key='gmail_bridge'").first<Data>();
+  if(setting&&JSON.parse(setting.value).token_hash===hash){c.set('companyId',companyId);return companyId;}
+ }
+ throw fail(401,'Invalid or replaced Gmail bridge key');
+}
 async function gmailHmacKey(c:C){return crypto.subtle.importKey('raw',gmailEncoder.encode(c.env.AUTH_SECRET),{name:'HMAC',hash:'SHA-256'},false,['sign','verify']);}
 async function sealGmailToken(c:C,token:string){const raw=await crypto.subtle.digest('SHA-256',gmailEncoder.encode(`gmail-refresh-v1:${c.env.AUTH_SECRET}`));const key=await crypto.subtle.importKey('raw',raw,{name:'AES-GCM'},false,['encrypt']);const iv=crypto.getRandomValues(new Uint8Array(12));const cipher=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,gmailEncoder.encode(token));return `${gmailB64(iv)}.${gmailB64(new Uint8Array(cipher))}`;}
 async function openGmailToken(c:C,sealed:string){try{const [iv,cipher]=sealed.split('.');const raw=await crypto.subtle.digest('SHA-256',gmailEncoder.encode(`gmail-refresh-v1:${c.env.AUTH_SECRET}`));const key=await crypto.subtle.importKey('raw',raw,{name:'AES-GCM'},false,['decrypt']);const plain=await crypto.subtle.decrypt({name:'AES-GCM',iv:gmailUnb64(iv)},key,gmailUnb64(cipher));return new TextDecoder().decode(plain);}catch{return null;}}
@@ -104,6 +115,58 @@ function registerGmail(app:Hono<Env>) {
   }
   await run(c,'UPDATE inbox_messages SET attachments_archived=1 WHERE id=?',inbox.id);
   return c.json({ok:true,already_imported:false,attachments_imported:imported});
+ });
+ // Streaming bridge endpoints keep binary STL payloads out of JSON parsing and
+ // request cloning, which otherwise exceeds a Cloudflare Worker's CPU/memory budget.
+ app.post('/api/integrations/gmail/bridge/message',async c=>{
+  const companyId=await requireGmailBridge(c),d=await body(c);
+  const messageId=typeof d.message_id==='string'?d.message_id.trim():'';
+  if(!messageId||messageId.length>500)throw fail(422,'A valid Gmail message ID is required.');
+  const externalId=`gmail:${messageId}`;
+  let inbox=await one(c,'SELECT id,attachments_archived FROM inbox_messages WHERE external_message_id=?',externalId) as Data|null;
+  if(inbox?.attachments_archived)return c.json({ok:true,already_imported:true});
+  if(!c.env.FILES)throw fail(503,'R2 attachment storage is not enabled.');
+  if(!inbox){
+   const sender=typeof d.sender==='string'?d.sender.slice(0,1000):'';
+   const email=sender.match(/<([^>]+)>/)?.[1]??sender;
+   const customer=email?await one(c,'SELECT id FROM customers WHERE lower(email)=?',email.toLowerCase()) as Data|null:null;
+   const received=typeof d.received_at==='string'&&!Number.isNaN(Date.parse(d.received_at))?new Date(d.received_at).toISOString():new Date().toISOString();
+   inbox=await insert(c,'inbox_messages',{source:'gmail',external_message_id:externalId,sender,subject:(typeof d.subject==='string'?d.subject:'(no subject)').slice(0,1000),body:(typeof d.body==='string'?d.body:'').slice(0,10000),received_at:received,archived:false,status:customer?'MATCHED':'RECEIVED',customer_id:customer?.id??null});
+  }
+  return c.json({ok:true,already_imported:false,inbox_message_id:inbox.id,company_id:companyId});
+ });
+ app.post('/api/integrations/gmail/bridge/attachment',async c=>{
+  const companyId=await requireGmailBridge(c);
+  if(!c.env.FILES)throw fail(503,'R2 attachment storage is not enabled.');
+  const messageId=c.req.header('x-gmail-message-id')||'',partKey=c.req.header('x-gmail-part-key')||'';
+  const encodedName=c.req.header('x-gmail-filename')||'',digest=(c.req.header('x-gmail-sha256')||'').toLowerCase();
+  const mimeHeader=c.req.header('x-gmail-mime-type')||'application/octet-stream';
+  const size=Number(c.req.header('content-length')||0);
+  if(!messageId||messageId.length>500||!partKey||partKey.length>500)throw fail(422,'Gmail message and part IDs are required.');
+  if(!/^[a-f0-9]{64}$/.test(digest))throw fail(422,'A valid attachment SHA-256 digest is required.');
+  if(!Number.isSafeInteger(size)||size<1||size>45*1024*1024)throw fail(413,'Each Gmail attachment must be 1 byte to 45 MB.');
+  let decodedName='attachment';try{decodedName=decodeURIComponent(encodedName);}catch{throw fail(422,'Attachment filename is invalid.');}
+  const filename=decodedName.split(/[\\/]/).pop()?.replace(/[\r\n\0]/g,'_').slice(0,240)||'attachment';
+  const mime=/^[\w!#$&^_.+-]+\/[\w!#$&^_.+-]+$/.test(mimeHeader)?mimeHeader:'application/octet-stream';
+  const inbox=await one(c,'SELECT id,attachments_archived FROM inbox_messages WHERE external_message_id=? AND source=\'gmail\'',`gmail:${messageId}`) as Data|null;
+  if(!inbox)throw fail(404,'Start this Gmail message import before uploading its files.');
+  if(inbox.attachments_archived)return c.json({ok:true,already_imported:true});
+  const exists=await one(c,'SELECT id FROM inbox_attachments WHERE inbox_message_id=? AND gmail_part_key=?',inbox.id,partKey);
+  if(exists)return c.json({ok:true,already_imported:true});
+  const stream=c.req.raw.body;if(!stream)throw fail(400,'Attachment body is empty.');
+  const key=`gmail/${companyId}/${inbox.id}/${crypto.randomUUID()}/${filename}`;
+  await c.env.FILES.put(key,stream,{httpMetadata:{contentType:mime}});
+  try{await insert(c,'inbox_attachments',{inbox_message_id:inbox.id,filename,mime_type:mime,size_bytes:size,sha256:digest,storage_key:key,gmail_part_key:partKey});}
+  catch(error){await c.env.FILES.delete(key);throw error;}
+  return c.json({ok:true,already_imported:false});
+ });
+ app.post('/api/integrations/gmail/bridge/complete',async c=>{
+  await requireGmailBridge(c);const d=await body(c),messageId=typeof d.message_id==='string'?d.message_id.trim():'';
+  if(!messageId||messageId.length>500)throw fail(422,'A valid Gmail message ID is required.');
+  const inbox=await one(c,'SELECT id,attachments_archived FROM inbox_messages WHERE external_message_id=? AND source=\'gmail\'',`gmail:${messageId}`) as Data|null;
+  if(!inbox)throw fail(404,'Gmail message was not started.');
+  await run(c,'UPDATE inbox_messages SET attachments_archived=1 WHERE id=?',inbox.id);
+  return c.json({ok:true});
  });
  app.get('/api/settings/gmail/connect-url',async c=>{const user=requireRoles(c,'ADMIN')!;const env=c.env as any;if(!env.GMAIL_CLIENT_ID||!env.GMAIL_CLIENT_SECRET)throw fail(503,'Set the Google OAuth Client ID and Client Secret as Cloudflare Worker secrets first.');const companyId=activeCompanyId(c),returnTo=c.req.query('return_to')==='inbox'?'inbox':'settings',nonce=gmailB64(crypto.getRandomValues(new Uint8Array(24))),payload=gmailB64(gmailEncoder.encode(JSON.stringify({cid:companyId,uid:Number(user.id),nonce,return_to:returnTo,exp:Math.floor(Date.now()/1000)+600})));const signature=gmailB64(new Uint8Array(await crypto.subtle.sign('HMAC',await gmailHmacKey(c),gmailEncoder.encode(payload))));await run(c,"INSERT INTO integration_settings(key,value) VALUES('gmail_oauth_state',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",JSON.stringify({nonce,user_id:Number(user.id),expires_at:Math.floor(Date.now()/1000)+600}));const redirectUri=`${new URL(c.req.url).origin}/api/integrations/gmail/callback`,settings=await gmailSettings(c);const authorize=new URL('https://accounts.google.com/o/oauth2/v2/auth');authorize.search=new URLSearchParams({client_id:env.GMAIL_CLIENT_ID,redirect_uri:redirectUri,response_type:'code',scope:'https://www.googleapis.com/auth/gmail.readonly',access_type:'offline',prompt:'consent',include_granted_scopes:'true',state:`${payload}.${signature}`,...(settings.user?{login_hint:settings.user}:{})}).toString();return c.json({url:authorize.toString(),redirect_uri:redirectUri});});
  app.get('/api/integrations/gmail/callback',async c=>{const state=c.req.query('state')||'',codeValue=c.req.query('code'),googleError=c.req.query('error');let returnTo:'inbox'|'settings'='settings';try{const [payload,signature,extra]=state.split('.');if(extra||!payload||!signature||!await crypto.subtle.verify('HMAC',await gmailHmacKey(c),gmailUnb64(signature),gmailEncoder.encode(payload)))throw new Error('Invalid Google authorization state');const value=JSON.parse(new TextDecoder().decode(gmailUnb64(payload))) as Data;returnTo=value.return_to==='inbox'?'inbox':'settings';if(!Number.isInteger(value.cid)||!Number.isInteger(value.uid)||value.exp<Math.floor(Date.now()/1000))throw new Error('Google authorization expired');c.set('companyId',value.cid);const savedState=await one(c,"SELECT value FROM integration_settings WHERE key='gmail_oauth_state'") as Data|null;const pending=savedState?JSON.parse(savedState.value):null;if(!pending||pending.nonce!==value.nonce||pending.user_id!==value.uid||pending.expires_at<Math.floor(Date.now()/1000))throw new Error('Google authorization request expired; try Connect Google again');await run(c,"DELETE FROM integration_settings WHERE key='gmail_oauth_state'");const user=await c.env.DB.prepare('SELECT id,company_id,role,active FROM app_users WHERE id=?').bind(value.uid).first<Data>();if(!user||!user.active||(user.role!=='SUPER_ADMIN'&&Number(user.company_id)!==value.cid)||!['ADMIN','SUPER_ADMIN'].includes(user.role))throw new Error('Only an active company administrator can connect Gmail');if(googleError)return c.redirect(returnTo==='inbox'?'/?page=inbox&gmail=cancelled':'/?page=settings&gmail=cancelled#gmail');if(!codeValue)throw new Error('Google did not return an authorization code');const env=c.env as any,redirectUri=`${new URL(c.req.url).origin}/api/integrations/gmail/callback`;const response=await fetch('https://oauth2.googleapis.com/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({client_id:env.GMAIL_CLIENT_ID,client_secret:env.GMAIL_CLIENT_SECRET,code:codeValue,grant_type:'authorization_code',redirect_uri:redirectUri})});const tokens=await response.json() as Data;if(!response.ok||!tokens.access_token)throw new Error('Google could not complete Gmail authorization');const old=await gmailSettings(c);let refresh=typeof tokens.refresh_token==='string'?tokens.refresh_token:old.refresh_token_encrypted?await openGmailToken(c,old.refresh_token_encrypted):env.GMAIL_REFRESH_TOKEN;if(!refresh)throw new Error('Google did not return offline access. Try Connect Google again and approve the requested Gmail access.');const profileResponse=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/profile',{headers:{Authorization:`Bearer ${tokens.access_token}`}});const profile=await profileResponse.json() as Data;if(!profileResponse.ok||!profile.emailAddress)throw new Error('Could not read the authorized Gmail account profile');await saveGmailSettings(c,{...old,enabled:true,user:profile.emailAddress,refresh_token_encrypted:await sealGmailToken(c,refresh)});return c.redirect(returnTo==='inbox'?'/?page=inbox&gmail=connected':'/?page=settings&gmail=connected#gmail');}catch(error){console.error('Gmail OAuth callback failed',error instanceof Error?error.message:'unknown error');return c.redirect(returnTo==='inbox'?'/?page=inbox&gmail=error':'/?page=settings&gmail=error#gmail');}});
