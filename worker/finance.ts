@@ -96,7 +96,10 @@ function registerGmail(app:Hono<Env>) {
   const d=await body(c),messageId=typeof d.message_id==='string'?d.message_id.trim():'';if(!messageId||messageId.length>500)throw fail(422,'A valid Gmail message ID is required.');
   if(!c.env.FILES)throw fail(503,'R2 attachment storage is not enabled.');
   const externalId=`gmail:${messageId}`;let inbox=await one(c,'SELECT id,attachments_archived FROM inbox_messages WHERE external_message_id=?',externalId) as Data|null;
-  if(inbox?.attachments_archived)return c.json({ok:true,already_imported:true,attachments_imported:0});
+  if(inbox?.attachments_archived){
+   const saved=await one(c,'SELECT COUNT(*) AS count FROM inbox_attachments WHERE inbox_message_id=?',inbox.id) as Data;
+   if(Number(saved.count)>0)return c.json({ok:true,already_imported:true,attachments_imported:0});
+  }
   const received=typeof d.received_at==='string'&&!Number.isNaN(Date.parse(d.received_at))?new Date(d.received_at).toISOString():new Date().toISOString();
   const sender=typeof d.sender==='string'?d.sender.slice(0,1000):'',email=sender.match(/<([^>]+)>/)?.[1]??sender,customer=email?await one(c,'SELECT id FROM customers WHERE lower(email)=?',email.toLowerCase()) as Data|null:null;
   if(!inbox)inbox=await insert(c,'inbox_messages',{source:'gmail',external_message_id:externalId,sender,subject:(typeof d.subject==='string'?d.subject:'(no subject)').slice(0,1000),body:(typeof d.body==='string'?d.body:'').slice(0,10000),received_at:received,archived:false,status:customer?'MATCHED':'RECEIVED',customer_id:customer?.id??null});
