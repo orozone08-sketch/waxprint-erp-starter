@@ -1,5 +1,5 @@
 import {useEffect, useRef, useState} from 'react'
-import {AlertTriangle, CheckCircle2, Inbox as InboxIcon, Mail, RefreshCw, Paperclip, Download, ExternalLink} from 'lucide-react'
+import {AlertTriangle, CheckCircle2, Inbox as InboxIcon, Mail, RefreshCw, Paperclip, Download, ExternalLink, BriefcaseBusiness, X} from 'lucide-react'
 import {downloadFile, getJson, postJson} from '../api'
 import {jumpTo} from '../ui'
 
@@ -7,6 +7,7 @@ type InboxAttachment={id:number;filename:string;mime_type:string;size_bytes:numb
 type InboxMessage={id:number;source:string;external_message_id:string|null;sender:string|null;subject:string|null;received_at:string;archived:boolean;status:string;customer_id:number|null;job_id:number|null;attachments:InboxAttachment[]}
 type GmailStatus={enabled:boolean;configured:boolean;client_configured:boolean;bridge_configured:boolean;storage_enabled:boolean;mode:string;user:string;mailbox:string;fetch_query:string;fetch_limit:number}
 type GmailFetch={ok:boolean;message:string;fetched?:number;imported?:number;skipped_existing?:number;attachments_imported?:number;errors?:string[]}
+type Customer={id:number;name:string;email:string|null;whatsapp:string|null}
 
 export default function Inbox(){
  const[messages,setMessages]=useState<InboxMessage[]>([])
@@ -15,6 +16,9 @@ export default function Inbox(){
  const[error,setError]=useState('')
  const[loading,setLoading]=useState(false)
  const[connecting,setConnecting]=useState(false)
+ const[customers,setCustomers]=useState<Customer[]>([])
+ const[selectedMessage,setSelectedMessage]=useState<InboxMessage|null>(null)
+ const[selectedCustomer,setSelectedCustomer]=useState('')
  const autoFetchStarted=useRef(false)
 
  const load=()=>Promise.all([getJson<InboxMessage[]>('/api/inbox'),getJson<GmailStatus>('/api/integrations/gmail/status')]).then(([inbox,gmail])=>{setMessages(inbox);setStatus(gmail)})
@@ -39,6 +43,28 @@ export default function Inbox(){
  }
 
  const refreshInbox=async()=>{setLoading(true);setError('');try{await load();setNotice('Inbox refreshed.')}catch(x){setError(String(x))}finally{setLoading(false)}}
+
+ const beginCreateJob=async(message:InboxMessage)=>{
+  setError('');setNotice('')
+  try{
+   const rows=await getJson<Customer[]>('/api/customers')
+   setCustomers(rows)
+   setSelectedCustomer(message.customer_id?String(message.customer_id):'')
+   setSelectedMessage(message)
+  }catch(x){setError(String(x))}
+ }
+
+ const createJob=async()=>{
+  if(!selectedMessage||!selectedCustomer)return
+  setLoading(true);setError('');setNotice('')
+  try{
+   const result=await postJson<{job_number:string;files:number}>(`/api/inbox/${selectedMessage.id}/create-job`,{customer_id:Number(selectedCustomer)})
+   setNotice(`${result.job_number} created with ${result.files} file(s) and sent to the Magics queue.`)
+   setSelectedMessage(null);setSelectedCustomer('')
+   await load()
+  }catch(x){setError(String(x))}
+  finally{setLoading(false)}
+ }
 
  useEffect(()=>{
   const result=new URLSearchParams(window.location.search).get('gmail')
@@ -74,9 +100,16 @@ export default function Inbox(){
    <Stat label="Job Linked" value={messages.filter(m=>m.job_id).length} onClick={()=>jumpTo('inbox-ledger')}/>
   </div>
 
+  {selectedMessage&&<div className="inboxJobCreator">
+   <div><h3>Create a job from this email</h3><p><b>{selectedMessage.subject||'(no subject)'}</b> · {selectedMessage.attachments.length} saved file(s)</p></div>
+   <label>Customer<select value={selectedCustomer} onChange={e=>setSelectedCustomer(e.target.value)}><option value="">Choose a customer</option>{customers.map(customer=><option key={customer.id} value={customer.id}>{customer.name}{customer.email?` · ${customer.email}`:''}</option>)}</select></label>
+   {!customers.length&&<small className="mutedCell">Add the customer in Customers first, then create this job.</small>}
+   <div className="inboxJobActions"><button className="primaryBtn" type="button" onClick={createJob} disabled={loading||!selectedCustomer}><BriefcaseBusiness size={15}/>{loading?'Creating...':'Create Job'}</button><button className="secondaryBtn" type="button" onClick={()=>setSelectedMessage(null)} disabled={loading}><X size={15}/>Cancel</button></div>
+  </div>}
+
   <table id="inbox-ledger">
-   <thead><tr><th>Source</th><th>From</th><th>Subject / Files</th><th>Received</th><th>Status</th><th>Links</th></tr></thead>
-   <tbody>{messages.map(m=><tr key={m.id}><td><span className="sourceCell"><Mail size={14}/>{m.source}</span></td><td>{m.sender||'-'}</td><td><b>{m.subject||'(no subject)'}</b>{m.source==='gmail'&&<div><a className="emailMessageLink" href={gmailSearchUrl(m)} target="_blank" rel="noreferrer"><ExternalLink size={13}/>Open email in Gmail</a></div>}{m.attachments?.length>0&&<div className="inboxAttachments">{m.attachments.map(file=><button key={file.id} type="button" className="attachmentLink" onClick={()=>downloadFile(`/api/inbox/attachments/${file.id}/download`,file.filename).catch(x=>setError(String(x)))}><Download size={13}/>{file.filename}<small>{formatSize(file.size_bytes)}</small></button>)}</div>}</td><td>{formatDate(m.received_at)}</td><td><span className="badge">{m.status}</span></td><td>{m.customer_id?`Customer #${m.customer_id}`:'-'}{m.job_id?` / Job #${m.job_id}`:''}{m.source==='gmail'&&<small className="attachmentCount"><Paperclip size={12}/>{m.attachments?.length??0} saved files</small>}</td></tr>)}</tbody>
+   <thead><tr><th>Source</th><th>From</th><th>Subject / Files</th><th>Received</th><th>Status</th><th>Links / Action</th></tr></thead>
+   <tbody>{messages.map(m=><tr key={m.id}><td><span className="sourceCell"><Mail size={14}/>{m.source}</span></td><td>{m.sender||'-'}</td><td><b>{m.subject||'(no subject)'}</b>{m.source==='gmail'&&<div><a className="emailMessageLink" href={gmailSearchUrl(m)} target="_blank" rel="noreferrer"><ExternalLink size={13}/>Open email in Gmail</a></div>}{m.attachments?.length>0&&<div className="inboxAttachments">{m.attachments.map(file=><button key={file.id} type="button" className="attachmentLink" onClick={()=>downloadFile(`/api/inbox/attachments/${file.id}/download`,file.filename).catch(x=>setError(String(x)))}><Download size={13}/>{file.filename}<small>{formatSize(file.size_bytes)}</small></button>)}</div>}</td><td>{formatDate(m.received_at)}</td><td><span className="badge">{m.status}</span></td><td>{m.customer_id?`Customer #${m.customer_id}`:'-'}{m.job_id?` / Job #${m.job_id}`:''}{m.source==='gmail'&&<small className="attachmentCount"><Paperclip size={12}/>{m.attachments?.length??0} saved files</small>}{!m.job_id&&<button className="createInboxJobBtn" type="button" disabled={!m.attachments?.length||loading} title={m.attachments?.length?'Choose the customer and create a production job':'Fetch and save this email’s files before creating a job'} onClick={()=>void beginCreateJob(m)}><BriefcaseBusiness size={13}/>Create Job</button>}</td></tr>)}</tbody>
   </table>
   {!messages.length&&<div className="emptyState inboxEmpty"><InboxIcon size={30}/><p>No inbox messages yet.</p></div>}
  </section>

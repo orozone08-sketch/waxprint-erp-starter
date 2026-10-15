@@ -251,6 +251,16 @@ tr:last-child td{border-bottom:0}
 .attachmentLink:hover{border-color:#9dc3df;background:#f4faff}
 .attachmentLink small{color:#667085;font-weight:600}
 .attachmentCount{display:flex;align-items:center;gap:4px;color:#667085;margin-top:5px}
+.createInboxJobBtn{display:inline-flex;align-items:center;gap:5px;margin-top:7px;border:1px solid #f5b5b5;border-radius:6px;background:#fff7f7;color:#b52f32;padding:6px 8px;font-size:11px;font-weight:900;cursor:pointer}
+.createInboxJobBtn:hover{background:#ffeded}
+.createInboxJobBtn:disabled{opacity:.55;cursor:not-allowed}
+.inboxJobCreator{display:grid;grid-template-columns:minmax(180px,1fr) minmax(220px,320px) auto;align-items:end;gap:12px;margin:0 0 14px;padding:14px;background:#fffaf5;border:1px solid #f0dfca;border-radius:9px}
+.inboxJobCreator h3{margin:0 0 5px;color:#132838;font-size:15px}
+.inboxJobCreator p{margin:0;color:#667085;font-size:12px}
+.inboxJobCreator label{display:grid;gap:5px;color:#34495e;font-size:12px;font-weight:800}
+.inboxJobCreator select{min-width:0;border:1px solid #dbe4ec;border-radius:7px;background:#fff;padding:9px;color:#132838;font:inherit}
+.inboxJobActions{display:flex;gap:7px}
+.inboxJobCreator>.mutedCell{grid-column:2}
 .inboxEmpty{margin-top:14px}
 .magicsHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px}
 .magicsHeader h2{margin:0 0 5px}
@@ -793,6 +803,8 @@ tr:last-child td{border-bottom:0}
  .inboxHeader{flex-direction:column}
  .inboxHeaderActions{justify-content:flex-start}
  .inboxStats{grid-template-columns:repeat(2,minmax(120px,1fr))}
+ .inboxJobCreator{grid-template-columns:1fr}
+ .inboxJobCreator>.mutedCell{grid-column:auto}
  .magicsStats{grid-template-columns:repeat(2,minmax(120px,1fr))}
  .platformStats,.platformGrid{grid-template-columns:1fr}
  .dispatchStaff{grid-template-columns:1fr}

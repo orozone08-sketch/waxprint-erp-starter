@@ -147,10 +147,30 @@ export function registerProduction(app: Hono<Env>) {
   })
   app.post('/api/inbox/gmail/clear', async c => {
     requireRoles(c, 'ADMIN')
-    const attachments = await all(c, "SELECT a.storage_key FROM inbox_attachments a JOIN inbox_messages m ON m.id=a.inbox_message_id WHERE m.source='gmail'")
+    const attachments = await all(c, "SELECT a.storage_key FROM inbox_attachments a JOIN inbox_messages m ON m.id=a.inbox_message_id WHERE m.source='gmail' AND NOT EXISTS (SELECT 1 FROM job_files f WHERE f.original_path=a.storage_key)")
     const result = await run(c, "DELETE FROM inbox_messages WHERE source='gmail'")
     if (c.env.FILES) await Promise.all(attachments.map((a: Row) => c.env.FILES!.delete(a.storage_key)))
     return c.json({ ok: true, deleted: result.meta.changes, files_deleted: attachments.length })
+  })
+  app.post('/api/inbox/:inbox_id/create-job', async c => {
+    const b = await body(c)
+    const inbox = await get(c, 'inbox_messages', c.req.param('inbox_id'), 'Inbox message')
+    if (inbox.job_id) {
+      const existing = await get(c, 'jobs', inbox.job_id, 'Job')
+      return c.json({ job_id: existing.id, job_number: existing.number, status: existing.status, already_created: true })
+    }
+    const customer = await get(c, 'customers', b.customer_id, 'Customer')
+    const attachments = await all(c, 'SELECT id,filename,mime_type,size_bytes,sha256,storage_key FROM inbox_attachments WHERE inbox_message_id=? ORDER BY id', inbox.id)
+    if (!attachments.length) fail(409, 'This email has no files saved in the ERP yet. Fetch its attachments first.')
+    const number = code('WJ')
+    const statements = [add(c, 'jobs', { number, customer_id: customer.id, source: inbox.source || 'gmail', status: 'WAITING_MAGICS', priority: 'NORMAL', instructions: inbox.subject || null })]
+    for (const attachment of attachments) {
+      statements.push(stmt(c, 'INSERT INTO job_files (job_id,file_uid,original_name,original_path,sha256,quantity,status) SELECT id,?,?,?,?,1,? FROM jobs WHERE number=?', code('F'), attachment.filename, attachment.storage_key, attachment.sha256, 'RECEIVED', number))
+    }
+    statements.push(stmt(c, "UPDATE inbox_messages SET customer_id=?,job_id=(SELECT id FROM jobs WHERE number=?),archived=1,status='IMPORTED' WHERE id=? AND job_id IS NULL", customer.id, number, inbox.id))
+    await database(c).batch(statements)
+    const job = await one(c, 'SELECT id,number,status FROM jobs WHERE number=?', number) as Row
+    return c.json({ job_id: job.id, job_number: job.number, status: job.status, files: attachments.length })
   })
   app.post('/api/inbox/manual-upload', async c => {
     const b = await c.req.parseBody(); const customer = await get(c, 'customers', b.customer_id, 'Customer'); const quantity = integer(b.quantity ?? 1, 'Quantity'); const source = typeof b.source === 'string' ? b.source : 'whatsapp'; const number = code('WJ'); const uid = code('F'); const f = await store(c, b.upload, { number }, 'original')
