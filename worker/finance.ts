@@ -124,7 +124,13 @@ function registerGmail(app:Hono<Env>) {
   if(!messageId||messageId.length>500)throw fail(422,'A valid Gmail message ID is required.');
   const externalId=`gmail:${messageId}`;
   let inbox=await one(c,'SELECT id,attachments_archived FROM inbox_messages WHERE external_message_id=?',externalId) as Data|null;
-  if(inbox?.attachments_archived)return c.json({ok:true,already_imported:true});
+  // A previous sync may have saved the email row but missed its files. Let the
+  // Apps Script retry those messages; once any files are present, keep the
+  // normal idempotent fast path.
+  if(inbox?.attachments_archived){
+   const saved=await one(c,'SELECT COUNT(*) AS count FROM inbox_attachments WHERE inbox_message_id=?',inbox.id) as Data;
+   if(Number(saved.count)>0)return c.json({ok:true,already_imported:true});
+  }
   if(!c.env.FILES)throw fail(503,'R2 attachment storage is not enabled.');
   if(!inbox){
    const sender=typeof d.sender==='string'?d.sender.slice(0,1000):'';
@@ -150,7 +156,6 @@ function registerGmail(app:Hono<Env>) {
   const mime=/^[\w!#$&^_.+-]+\/[\w!#$&^_.+-]+$/.test(mimeHeader)?mimeHeader:'application/octet-stream';
   const inbox=await one(c,'SELECT id,attachments_archived FROM inbox_messages WHERE external_message_id=? AND source=\'gmail\'',`gmail:${messageId}`) as Data|null;
   if(!inbox)throw fail(404,'Start this Gmail message import before uploading its files.');
-  if(inbox.attachments_archived)return c.json({ok:true,already_imported:true});
   const exists=await one(c,'SELECT id FROM inbox_attachments WHERE inbox_message_id=? AND gmail_part_key=?',inbox.id,partKey);
   if(exists)return c.json({ok:true,already_imported:true});
   const stream=c.req.raw.body;if(!stream)throw fail(400,'Attachment body is empty.');
