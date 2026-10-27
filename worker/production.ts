@@ -88,6 +88,22 @@ export function registerProduction(app: Hono<Env>) {
     if (f.processed_path) await files(c).delete(f.processed_path)
     return c.json({ file_id: f.id, name: processed.name, sha256: processed.digest, size: processed.size, processed: true })
   })
+  app.post('/api/jobs/:job_id/files/:file_id/stl-repair', async c => {
+    const jobId = integer(c.req.param('job_id'), 'Job id'); const j = await get(c, 'jobs', jobId, 'Job'); const f = await get(c, 'job_files', c.req.param('file_id'), 'File')
+    if (f.job_id !== j.id) fail(404, 'File is not part of this job')
+    if (!String(f.original_name).toLowerCase().endsWith('.stl')) fail(415, 'ERP automatic repair supports STL files only.')
+    if (['ON_PLATFORM','PRINTING','QC_PASSED','QC_FAILED','RESHOOT_PENDING'].includes(f.status)) fail(409, 'This file has already entered platform or print production')
+    const form = await c.req.parseBody(); const upload = form.processed_file
+    if (!(upload instanceof File) || !upload.name.toLowerCase().endsWith('.stl')) fail(415, 'The repaired output must be an STL file.')
+    let report: Row
+    try { report = JSON.parse(String(form.repair_report || '{}')) as Row } catch { fail(422, 'Repair report is invalid.') }
+    if (report.watertight !== true || Number(report.unfilledBoundaries) !== 0 || Number(report.nonManifoldEdges) !== 0 || !Number.isInteger(Number(report.outputTriangles)) || Number(report.outputTriangles) < 1) fail(422, 'This STL did not pass the closed-mesh check and cannot be saved as production-ready.')
+    const processed = await store(c, upload, j, 'stl-repair')
+    try { await update(c, 'job_files', f.id, { processed_path: processed.key }); }
+    catch (e) { await files(c).delete(processed.key); throw e }
+    if (f.processed_path) await files(c).delete(f.processed_path)
+    return c.json({ file_id: f.id, name: processed.name, sha256: processed.digest, size: processed.size, processed: true, repair_report: report })
+  })
   app.get('/api/machines', async c => c.json(await all(c, 'SELECT * FROM machines ORDER BY name')))
   app.post('/api/machines', async c => { const b = await body(c); const m = await insert(c, 'machines', { code: text(b.code, 'Code'), name: text(b.name, 'Name'), model: b.model ?? null, serial_number: b.serial_number ?? null, status: b.status ?? 'AVAILABLE' }); return c.json({ id: m.id, name: m.name, status: m.status }) })
   app.get('/api/platforms', async c => c.json((await all(c, 'SELECT id,number,software_name,machine_id,status,is_reshoot_platform FROM platforms ORDER BY id DESC')).map((p: Row) => ({ ...p, is_reshoot_platform: !!p.is_reshoot_platform }))))

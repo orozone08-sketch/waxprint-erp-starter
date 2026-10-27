@@ -1,16 +1,18 @@
 import {useEffect,useState} from 'react'
-import {Download, FileText, RefreshCw, Upload} from 'lucide-react'
+import {Download, FileText, RefreshCw, Upload, Wrench} from 'lucide-react'
 import StlViewerModal, {type StlPreviewFile} from '../components/StlViewerModal'
+import StlRepairModal,{type RepairableStlFile} from '../components/StlRepairModal'
 import {downloadFile, getJson, postForm} from '../api'
 import {Job} from '../types'
 
-type JobFile={id:number;file_uid:string;name:string;status:string;quantity:number;sha256:string|null;download_url:string}
+type JobFile=RepairableStlFile&{file_uid:string;status:string;quantity:number;sha256:string|null}
 type JobDetail={job:Job;files:JobFile[]}
 
 export default function Jobs(){
  const[jobs,setJobs]=useState<Job[]>([])
  const[filesByJob,setFilesByJob]=useState<Record<number,JobFile[]>>({})
  const[previewFile,setPreviewFile]=useState<StlPreviewFile|null>(null)
+ const[repairTarget,setRepairTarget]=useState<{jobId:number;file:RepairableStlFile}|null>(null)
  const[notice,setNotice]=useState('')
  const[error,setError]=useState('')
  const[loading,setLoading]=useState(false)
@@ -51,11 +53,12 @@ export default function Jobs(){
     const files=filesByJob[j.id]||[]
     return <tr key={j.id}>
      <td><b>{j.number}</b></td><td>{j.customer}</td><td>{j.source}</td><td><span className="badge">{j.status}</span></td>
-     <td><div className="jobFileActions">{files.map(f=><span key={f.id}><button className="tableLinkBtn" type="button" onClick={()=>setPreviewFile(f)}><FileText size={13}/>{f.name}</button><button className="fileDownloadBtn" type="button" onClick={()=>downloadFile(f.download_url,f.name)} aria-label={`Download ${f.name}`}><Download size={13}/></button></span>)}<label className="fileUploadBtn"><Upload size={13}/>{files.length?'Add':'Upload'} STL<input type="file" accept=".stl" disabled={loading} onChange={e=>{void uploadFile(j.id,e.target.files?.[0]||null);e.currentTarget.value=''}}/></label></div></td>
+     <td><div className="jobFileActions">{files.map(f=><span key={f.id}><button className="tableLinkBtn" type="button" onClick={()=>setPreviewFile(f)}><FileText size={13}/>{f.name}</button><button className="fileDownloadBtn" type="button" onClick={()=>downloadFile(f.download_url,f.name)} aria-label={`Download ${f.name}`}><Download size={13}/></button>{f.name.toLowerCase().endsWith('.stl')&&<button className="fileRepairBtn" type="button" disabled={loading||['ON_PLATFORM','PRINTING','QC_PASSED','QC_FAILED','RESHOOT_PENDING'].includes(f.status)} onClick={()=>setRepairTarget({jobId:j.id,file:f})}><Wrench size={13}/>Repair STL</button>}</span>)}<label className="fileUploadBtn"><Upload size={13}/>{files.length?'Add':'Upload'} STL<input type="file" accept=".stl" disabled={loading} onChange={e=>{void uploadFile(j.id,e.target.files?.[0]||null);e.currentTarget.value=''}}/></label></div></td>
      <td>{j.billable_weight_g} g</td><td>{j.reshoot_weight_g} g</td>
     </tr>
    })}</tbody>
   </table>
   <StlViewerModal file={previewFile} onClose={()=>setPreviewFile(null)}/>
+  {repairTarget&&<StlRepairModal key={`${repairTarget.jobId}-${repairTarget.file.id}`} jobId={repairTarget.jobId} file={repairTarget.file} onClose={()=>setRepairTarget(null)} onSaved={load}/>}
  </section>
 }

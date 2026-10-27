@@ -317,6 +317,9 @@ tr:last-child td{border-bottom:0}
 .tableLinkBtn:hover,.tableLinkBtn:focus-visible{text-decoration:underline;outline:0}
 .fileDownloadBtn{display:grid;place-items:center;width:24px;height:24px;border:0;border-radius:7px;background:transparent;color:#34495c;text-decoration:none;cursor:pointer}
 .fileDownloadBtn:hover,.fileDownloadBtn:focus-visible{background:#fff;outline:0}
+.fileRepairBtn{display:inline-flex;align-items:center;gap:4px;border:1px solid #f4caca;border-radius:6px;background:#fff;color:#b83d42;padding:4px 6px;font-size:10px;font-weight:900;cursor:pointer;white-space:nowrap}
+.fileRepairBtn:hover,.fileRepairBtn:focus-visible{border-color:var(--wax);background:#fff6f6;outline:0}
+.fileRepairBtn:disabled{opacity:.55;cursor:not-allowed}
 .fileUploadBtn{display:inline-flex;align-items:center;gap:5px;border:1px dashed #ffc7c7;border-radius:8px;background:#fff7f7;color:var(--wax);padding:7px 9px;font-size:12px;font-weight:900;cursor:pointer;white-space:nowrap}
 .fileUploadBtn input{display:none}
 .fileUploadBtn:hover,.fileUploadBtn:focus-within{border-color:var(--wax);background:#fff;outline:0}
@@ -330,6 +333,24 @@ tr:last-child td{border-bottom:0}
 .stlCanvasWrap canvas{display:block;width:100%;height:100%;cursor:grab}
 .stlCanvasWrap canvas:active{cursor:grabbing}
 .stlStatus{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px 12px;color:#34495c;font-size:13px;font-weight:900;box-shadow:0 12px 28px rgba(12,31,46,.12)}
+.repairOverlay{z-index:78}
+.stlRepairModal{height:min(780px,92vh);grid-template-rows:auto minmax(0,1fr)}
+.stlRepairBody{overflow:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+.stlRepairBody .infoBox{border:1px solid #d6e7f5;border-radius:8px;background:#f3f9fd;padding:12px;color:#34495c;font-size:12px;line-height:1.6}
+.stlRepairBody .errorBox,.stlRepairBody .successBox,.stlRepairBody .warningBox{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;font-size:12px;font-weight:800}
+.stlRepairBody .warningBox{border:1px solid #f3d58a;background:#fff8e7;color:#805b00}
+.repairReport{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.repairMetric{border:1px solid #edf1f5;border-radius:8px;background:#f8fafc;padding:10px;min-width:0}
+.repairMetric small{display:block;color:#667085;font-size:11px;font-weight:800}
+.repairMetric b{display:block;color:#132838;font-size:14px;margin-top:4px;overflow-wrap:anywhere}
+.repairWarnings{margin:0;padding-left:22px;color:#805b00;font-size:12px;line-height:1.6}
+.repairActions{display:flex;gap:8px;flex-wrap:wrap}
+.repairReview{display:flex;align-items:center;gap:8px;color:#34495c;font-size:12px;font-weight:800}
+.repairReview input{width:16px;height:16px;accent-color:var(--wax)}
+.repairFooter{display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid var(--line);padding-top:12px}
+.repairFooter small{color:#667085;font-size:11px;line-height:1.5}
+.spinIcon{animation:repairSpin .9s linear infinite}@keyframes repairSpin{to{transform:rotate(360deg)}}
+@media(max-width:700px){.repairReport{grid-template-columns:repeat(2,minmax(0,1fr))}.repairFooter{align-items:stretch;flex-direction:column}.repairFooter .primaryBtn{justify-content:center;white-space:normal}}
 .printingHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px}
 .printingHeader h2{margin:0 0 5px}
 .printingHeader p{margin:0;color:#667085;font-size:13px}

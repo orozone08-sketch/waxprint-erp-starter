@@ -77,7 +77,8 @@ export default function StlViewerModal({file,onClose}:{file:StlPreviewFile|null;
 
   setLoading(true)
   setError('')
-  fetchBlob(file.download_url)
+  const modelPromise=file.download_url.startsWith('blob:')?fetch(file.download_url).then(response=>{if(!response.ok)throw new Error('The local preview is no longer available.');return response.blob()}):fetchBlob(file.download_url)
+  modelPromise
    .then(blob=>blob.arrayBuffer())
    .then(buffer=>{
     if(disposed)return

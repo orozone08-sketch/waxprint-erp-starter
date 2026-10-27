@@ -77,7 +77,7 @@ export async function fetchBlob(path:string):Promise<Blob>{
 }
 
 export async function downloadFile(path:string, filename:string){
- const blob=await fetchBlob(path)
+ const blob=path.startsWith('blob:')?await (await fetch(path)).blob():await fetchBlob(path)
  const url=window.URL.createObjectURL(blob)
  const link=document.createElement('a')
  link.href=url
