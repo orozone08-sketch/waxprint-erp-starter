@@ -1,10 +1,12 @@
 import {useEffect,useState} from 'react'
 import {AlertTriangle,CheckCircle2,Download,Eye,LoaderCircle,Save,Wrench,X} from 'lucide-react'
-import {downloadFile,fetchBlob,postForm} from '../api'
+import {downloadFile,fetchBlob,getJson,postForm,postJson} from '../api'
 import StlViewerModal,{type StlPreviewFile} from './StlViewerModal'
 import {repairStl,type StlRepairReport} from '../lib/stlRepair'
+import {calculateStlWeight} from '../stlWeight'
 
 export type RepairableStlFile=StlPreviewFile&{original_download_url:string}
+type Material={id:number;name:string;density_g_cm3:number|null}
 
 export default function StlRepairModal({jobId,file,onClose,onSaved}:{jobId:number;file:RepairableStlFile;onClose:()=>void;onSaved:()=>Promise<void>|void}){
  const[loading,setLoading]=useState(false)
@@ -15,8 +17,11 @@ export default function StlRepairModal({jobId,file,onClose,onSaved}:{jobId:numbe
  const[repairUrl,setRepairUrl]=useState('')
  const[preview,setPreview]=useState<StlPreviewFile|null>(null)
  const[reviewed,setReviewed]=useState(false)
+ const[materials,setMaterials]=useState<Material[]>([])
+ const[materialId,setMaterialId]=useState('')
 
  useEffect(()=>()=>{if(repairUrl)URL.revokeObjectURL(repairUrl)},[repairUrl])
+ useEffect(()=>{getJson<Material[]>('/api/materials').then(rows=>{setMaterials(rows);setMaterialId(String(rows.find(m=>m.density_g_cm3)?.id||''))}).catch(x=>setError(String(x)))},[])
 
  const runRepair=async()=>{
   setLoading(true);setError('');setNotice('');setReport(null);setRepairBlob(null);setRepairUrl('');setReviewed(false)
@@ -36,8 +41,16 @@ export default function StlRepairModal({jobId,file,onClose,onSaved}:{jobId:numbe
   try{
    const form=new FormData();form.append('processed_file',new File([repairBlob],file.name,{type:'model/stl'}));form.append('repair_report',JSON.stringify(report))
    await postForm(`/api/jobs/${jobId}/files/${file.id}/stl-repair`,form)
-   await onSaved();setNotice(`${file.name}: repaired STL saved. The original remains available.`)
-   window.setTimeout(onClose,650)
+   let message=`${file.name}: repaired STL saved. The original remains available.`
+   const material=materials.find(m=>String(m.id)===materialId)
+   if(material?.density_g_cm3)try{
+    const result=await calculateStlWeight(repairBlob,material.density_g_cm3,file.name)
+    await postJson(`/api/job-files/${file.id}/weight`,{weight_g:result.weightG,weight_source:'AUTO_STL'})
+    message+=` Weight calculated and saved: ${result.weightG} g (${result.volumeMm3} mm³), using ${material.name}.`
+   }catch(weightError){message+=` Weight was not calculated: ${String(weightError)}. The repaired file is saved; you can retry from Weight.`}
+   else message+=' Set a material density under Settings → Materials to calculate its weight.'
+   await onSaved();setNotice(message)
+   window.setTimeout(onClose,1800)
   }catch(x){setError(String(x))}
   finally{setLoading(false)}
  }
@@ -53,7 +66,8 @@ export default function StlRepairModal({jobId,file,onClose,onSaved}:{jobId:numbe
     <div className="stlRepairBody">
      <div className="infoBox"><b>Automatic basic mesh repair</b><br/>The ERP removes degenerate and duplicate triangles, corrects face direction, and caps only small planar convex openings. Review the 3D result before saving. This does not replace Magics for complex defects.</div>
      {error&&<div className="errorBox">{error}</div>}
-     {notice&&<div className={report?.watertight?'successBox':'warningBox'}>{notice}</div>}
+     {notice&&<div className={notice.includes('Weight was not calculated')?'warningBox':report?.watertight?'successBox':'warningBox'}>{notice}</div>}
+     <label className="repairMaterial">Material for automatic STL weight<select value={materialId} onChange={e=>setMaterialId(e.target.value)}><option value="">Choose material with saved density</option>{materials.map(m=><option key={m.id} value={m.id}>{m.name} · {m.density_g_cm3?`${m.density_g_cm3} g/cm³`:'density not set'}</option>)}</select></label>
      {report&&<>
       <div className="repairReport">
        <Metric label="Triangles" value={`${report.inputTriangles.toLocaleString()} → ${report.outputTriangles.toLocaleString()}`}/>
