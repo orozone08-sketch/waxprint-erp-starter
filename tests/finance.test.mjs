@@ -59,7 +59,7 @@ test('finance roles enforce approval and accounting boundaries; missing Gmail cr
   await json(await h.request(`/api/expenses/${expense.id}/approve`,{method:'POST'}));
   assert.equal((await json(await h.request('/api/reports/pnl'))).company_overhead,20);
   await json(await h.request('/api/settings/gmail',{method:'POST',body:{enabled:true,user:'owner@example.com'}}));
-  const response=await h.request('/api/settings/gmail/test',{method:'POST'});const error=await json(response,400);assert.match(error.detail,/GMAIL_CLIENT_ID/);
+  const response=await h.request('/api/settings/gmail/test',{method:'POST'});const error=await json(response,400);assert.match(error.detail,/Google app client must be configured/);
   assert.equal((await h.request('/api/expenses',{method:'POST',body:{category:'Office',description:'Invalid',amount:-1}})).status,422);
  }finally{h.close();}
 });
