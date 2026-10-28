@@ -6,7 +6,7 @@ import {jumpTo} from '../ui'
 import StlViewerModal, {type StlPreviewFile} from '../components/StlViewerModal'
 
 type InboxMessage={id:number;source:string;sender:string|null;subject:string|null;received_at:string;archived:boolean;status:string;customer_id:number|null;job_id:number|null}
-type JobFile={id:number;file_uid:string;name:string;status:string;quantity:number;sha256:string|null;download_url:string}
+type JobFile={id:number;file_uid:string;name:string;status:string;quantity:number;sha256:string|null;download_url:string;weight_g:number|null;weight_source:string|null}
 type MagicsSession={id:number;operator:string;workstation:string;status:string;checker:string|null;approved:boolean}
 type JobDetail={job:Job&{instructions?:string|null};files:JobFile[];magics:MagicsSession[];reshoots:{id:number;number:string;status:string;quantity:number;source:string;reason:string;chargeable:boolean}[]}
 type Platform={id:number;number:string;software_name:string;machine_id:number|null;status:string;is_reshoot_platform:boolean}
@@ -55,9 +55,11 @@ export default function Platforms({role}:{role:string}){
   const reshoots=detail?.reshoots.filter(r=>r.status!=='CLOSED')||[]
   const printAttempts=attempts.filter(a=>detail?.files.some(f=>f.id===a.file_id))
   const outstandingPrint=Math.max(fileQty - printAttempts.filter(a=>closedPrintStatuses.has(a.status)).reduce((sum,a)=>sum+a.good_qty+a.bad_qty,0),0)
-  const autoWeight=autoPrintWeight(job,fileQty)
+  const knownFileWeight=detail?.files.reduce((sum,f)=>sum+(f.weight_g||0)*f.quantity,0)||0
+  const missingFileWeights=detail?.files.filter(f=>!f.weight_g||f.weight_g<=0).length||0
+  const autoWeight=knownFileWeight
   const kit=kitEstimate(materials,autoWeight)
-  return {job,detail,messages,profit,fileQty,magics,reshoots,printAttempts,outstandingPrint,autoWeight,kit}
+  return {job,detail,messages,profit,fileQty,magics,reshoots,printAttempts,outstandingPrint,autoWeight,missingFileWeights,kit}
  }),[jobs,details,inbox,profits,attempts,materials])
 
  const createPlatform=async(jobId:number)=>{
@@ -115,8 +117,8 @@ export default function Platforms({role}:{role:string}){
       <span>{r.magics?.checker?`Checker: ${r.magics.checker}`:'Approve in Magics Repair page'}</span>
      </Info>
      <Info title="Auto Weight" icon={<Calculator size={16}/>}>
-      <b>{round(r.autoWeight)}g estimated</b>
-      <span>{r.job.billable_weight_g?`${r.job.billable_weight_g}g billable + ${r.job.reshoot_weight_g}g reshoot`:'Fallback: file quantity x 0.65g'}</span>
+      <b>{round(r.autoWeight)}g measured</b>
+      <span>{r.missingFileWeights?`${r.missingFileWeights} STL file(s) have no measured weight yet`:`${r.detail?.files.length||0} file(s) measured from Magics / Easy3D`}</span>
      </Info>
      <Info title="Material / Kit" icon={<Boxes size={16}/>}>
       <b>{r.kit.label}</b>
@@ -136,11 +138,6 @@ export default function Platforms({role}:{role:string}){
   </div>
   <StlViewerModal file={previewFile} onClose={()=>setPreviewFile(null)}/>
  </section>
-}
-
-function autoPrintWeight(job:Job,fileQty:number){
- if(job.billable_weight_g||job.reshoot_weight_g)return job.billable_weight_g+job.reshoot_weight_g
- return fileQty*.65
 }
 
 function kitEstimate(materials:Material[],weightG:number){

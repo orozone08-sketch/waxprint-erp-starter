@@ -33,7 +33,7 @@ export default function Billing(){
  useEffect(()=>{load().catch(x=>setError(String(x)))},[])
 
  const customerById=useMemo(()=>Object.fromEntries(customers.map(c=>[c.id,c])),[customers])
- const readyJobs=jobs.filter(j=>invoiceReadyStatuses.has(j.status)&&j.billable_weight_g>0)
+ const readyJobs=jobs.filter(j=>invoiceReadyStatuses.has(j.status)&&j.billable_weight_g>0&&(j.missing_file_weight_count||0)===0)
  const outstandingInvoices=invoices.filter(i=>i.outstanding>0)
  const totalSales=invoices.reduce((sum,i)=>sum+i.total,0)
  const totalPaid=invoices.reduce((sum,i)=>sum+i.paid,0)

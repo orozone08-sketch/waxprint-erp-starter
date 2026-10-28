@@ -299,6 +299,18 @@ export const schema = {
       "type": "number",
       "nullable": false
     },
+    "weight_g": {
+      "type": "number",
+      "nullable": true
+    },
+    "weight_source": {
+      "type": "string",
+      "nullable": true
+    },
+    "weight_recorded_at": {
+      "type": "string",
+      "nullable": true
+    },
     "status": {
       "type": "string",
       "nullable": false
@@ -626,6 +638,10 @@ export const schema = {
     "minimum_stock": {
       "type": "number",
       "nullable": false
+    },
+    "density_g_cm3": {
+      "type": "number",
+      "nullable": true
     }
   },
   "purchases": {

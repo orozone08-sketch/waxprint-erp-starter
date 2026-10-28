@@ -1,12 +1,14 @@
 const ERP_BRIDGE_BASE = 'https://waxprint-erp.orozone08.workers.dev/api/integrations/gmail/bridge';
 const ERP_BRIDGE_TOKEN = 'PASTE_ERP_BRIDGE_KEY_HERE';
-const GMAIL_SEARCH_QUERY = 'newer_than:30d has:attachment filename:stl';
-const MAX_NEW_MESSAGES_PER_RUN = 25;
+// Include print CAD files plus RAR bundles that contain STL/CAM files.
+const GMAIL_SEARCH_QUERY = 'has:attachment {filename:stl filename:cam filename:rar}';
+// Process one large CAD/RAR email per run to keep Apps Script memory bounded.
+const MAX_NEW_MESSAGES_PER_RUN = 1;
 const MAX_GMAIL_MESSAGES_TO_SCAN = 500;
 const MAX_ATTACHMENT_BYTES = 45 * 1024 * 1024;
 const GMAIL_API = 'https://gmail.googleapis.com/gmail/v1/users/me/';
 
-/** Imports recent Gmail messages with print files. Gmail is only read, never changed. */
+/** Imports Gmail messages with print files, including historical messages that need attachment backfill. Gmail is only read, never changed. */
 function syncGmailToErp() {
   if (!ERP_BRIDGE_TOKEN || ERP_BRIDGE_TOKEN === 'PASTE_ERP_BRIDGE_KEY_HERE') {
     throw new Error('Download the latest Gmail bridge script from ERP Settings.');
@@ -17,11 +19,11 @@ function syncGmailToErp() {
   let attempted = 0;
   let importedMessages = 0;
   let importedFiles = 0;
-  let skippedMessages = 0;
   let failedMessages = 0;
+  let alreadyImportedMessages = 0;
 
   while (scanned < MAX_GMAIL_MESSAGES_TO_SCAN && attempted < MAX_NEW_MESSAGES_PER_RUN) {
-    const params = { q: GMAIL_SEARCH_QUERY, maxResults: 100 };
+    const params = { q: GMAIL_SEARCH_QUERY, maxResults: 25 };
     if (pageToken) params.pageToken = pageToken;
     const listed = gmailApi('messages', params);
     const messages = listed.messages || [];
@@ -40,7 +42,29 @@ function syncGmailToErp() {
         const attachments = [];
         const bodyParts = [];
         collectParts(message.payload || {}, attachments, bodyParts, '0');
-        if (!attachments.length) continue;
+        // Gmail can expose forwarded or nonstandard MIME attachments in a
+        // shape the REST payload walker does not recognize. Ask GmailApp for
+        // the message's actual attachment blobs as a fallback.
+        if (!attachments.length) {
+          const gmailMessage = GmailApp.getMessageById(message.id);
+          const blobs = gmailMessage.getAttachments({
+            includeInlineImages: false,
+            includeAttachments: true
+          });
+          blobs.forEach(function (blob, index) {
+            attachments.push({
+              filename: blob.getName() || ('attachment-' + (index + 1) + '.bin'),
+              mimeType: blob.getContentType() || 'application/octet-stream',
+              partKey: 'gmailapp:' + index,
+              attachmentId: '',
+              data: Utilities.base64Encode(blob.getBytes())
+            });
+          });
+        }
+        if (!attachments.length) {
+          console.warn('Gmail returned no downloadable attachment for "' + header('subject') + '" (' + message.id + '). Message left retryable.');
+          continue;
+        }
 
         const started = bridgeJson('message', {
           message_id: message.id,
@@ -49,8 +73,12 @@ function syncGmailToErp() {
           body: bodyParts.join('\n\n').slice(0, 8000) || message.snippet || '',
           received_at: new Date(Number(message.internalDate)).toISOString()
         });
+        // Skip completed emails so the one-message-per-run limit can reach
+        // older emails whose attachments have not been saved yet. The bridge
+        // only reports already_imported when it has a saved attachment; emails
+        // with zero files and incomplete imports remain retryable.
         if (started.already_imported) {
-          skippedMessages++;
+          alreadyImportedMessages++;
           continue;
         }
         attempted++;
@@ -104,7 +132,7 @@ function syncGmailToErp() {
     if (!pageToken) break;
   }
 
-  const summary = 'Imported ' + importedMessages + ' new message(s), saved ' + importedFiles + ' file(s), already in ERP ' + skippedMessages + ', failed ' + failedMessages + '. Scanned ' + scanned + ' Gmail message(s).';
+  const summary = 'Processed ' + importedMessages + ' message(s), saved ' + importedFiles + ' new file(s), skipped ' + alreadyImportedMessages + ' completed message(s), failed ' + failedMessages + '. Scanned ' + scanned + ' Gmail message(s).';
   console.log(summary);
   return summary;
 }

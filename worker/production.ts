@@ -43,12 +43,12 @@ async function download(c: C, key: string, name: string) {
 }
 
 export function registerProduction(app: Hono<Env>) {
-  app.get('/api/jobs', async c => { const status = c.req.query('status'); return c.json(await all(c, `SELECT j.id,j.number,c.name customer,j.customer_id,j.source,j.status,j.priority,j.billable_weight_g,j.reshoot_weight_g,j.received_at FROM jobs j JOIN customers c ON c.id=j.customer_id ${status ? 'WHERE j.status=?' : ''} ORDER BY j.id DESC`, ...(status ? [status] : []))) })
+  app.get('/api/jobs', async c => { const status = c.req.query('status'); return c.json(await all(c, `SELECT j.id,j.number,c.name customer,j.customer_id,j.source,j.status,j.priority,j.billable_weight_g,j.reshoot_weight_g,j.received_at,(SELECT COUNT(*) FROM job_files f WHERE f.job_id=j.id) file_count,(SELECT COUNT(*) FROM job_files f WHERE f.job_id=j.id AND (f.weight_g IS NULL OR f.weight_g<=0)) missing_file_weight_count FROM jobs j JOIN customers c ON c.id=j.customer_id ${status ? 'WHERE j.status=?' : ''} ORDER BY j.id DESC`, ...(status ? [status] : []))) })
   app.post('/api/jobs', async c => { const b = await body(c); await get(c, 'customers', b.customer_id, 'Customer'); const j = await insert(c, 'jobs', { number: code('WJ'), customer_id: b.customer_id, source: b.source ?? 'manual', priority: b.priority ?? 'NORMAL', instructions: b.instructions ?? null }); return c.json({ id: j.id, number: j.number, status: j.status }) })
   app.get('/api/jobs/:job_id', async c => {
     const j = await get(c, 'jobs', c.req.param('job_id'), 'Job'); const customer = await get(c, 'customers', j.customer_id, 'Customer')
     const [files, magics, reshoots, dispatches, returns] = await Promise.all([
-      all(c, 'SELECT id,file_uid,original_name name,status,quantity,sha256,processed_path FROM job_files WHERE job_id=?', j.id),
+      all(c, 'SELECT id,file_uid,original_name name,status,quantity,sha256,processed_path,weight_g,weight_source,weight_recorded_at FROM job_files WHERE job_id=?', j.id),
       all(c, 'SELECT id,operator_name operator,workstation,status,checker_name checker,approved FROM magics_sessions WHERE job_id=? ORDER BY id DESC', j.id),
       all(c, 'SELECT id,number,job_file_id file_id,source,reason,quantity,status,chargeable FROM reshoot_tickets WHERE job_id=?', j.id),
       all(c, 'SELECT * FROM dispatches WHERE job_id=?', j.id),
@@ -61,6 +61,24 @@ export function registerProduction(app: Hono<Env>) {
     try { const result = await database(c).batch([add(c, 'job_files', { job_id: j.id, file_uid: uid, original_name: f.name, original_path: f.key, sha256: f.digest, quantity, status: 'RECEIVED' }), set(c, 'jobs', j.id, { status: 'WAITING_MAGICS' })]); return c.json({ id: result[0].meta.last_row_id, file_uid: uid, name: f.name, sha256: f.digest, size: f.size }) } catch (e) { await files(c).delete(f.key); throw e }
   })
   app.get('/api/job-files/:file_id/download', async c => { const f = await get(c, 'job_files', c.req.param('file_id'), 'File'); const original = c.req.query('version') === 'original'; return download(c, !original && f.processed_path ? f.processed_path : f.original_path, f.original_name) })
+  app.post('/api/job-files/:file_id/weight', async c => {
+    const f = await get(c, 'job_files', c.req.param('file_id'), 'File'); const b = await body(c); const job = await get(c, 'jobs', f.job_id, 'Job')
+    if (job.status === 'INVOICED') fail(409, 'This job is already invoiced; create an adjustment instead of changing its file weight')
+    const weight_g = positive(b.weight_g, 'File weight'); const source = text(b, 'weight_source')
+    if (!['MAGICS', 'EASY3D', 'MANUAL', 'AUTO_STL'].includes(source)) fail(422, 'weight_source must be MAGICS, EASY3D, MANUAL, or AUTO_STL')
+    const db = database(c)
+    await db.batch([
+      db.prepare('UPDATE job_files SET weight_g=?,weight_source=?,weight_recorded_at=? WHERE id=?').bind(weight_g, source, now(), f.id),
+      db.prepare(`UPDATE jobs SET
+        billable_weight_g=CASE WHEN EXISTS(SELECT 1 FROM job_files WHERE job_id=? AND (weight_g IS NULL OR weight_g<=0)) THEN 0 ELSE COALESCE((SELECT SUM(weight_g*quantity) FROM job_files WHERE job_id=?),0) END,
+        weight_recorded_at=CASE WHEN EXISTS(SELECT 1 FROM job_files WHERE job_id=? AND (weight_g IS NULL OR weight_g<=0)) THEN NULL ELSE ? END,
+        status=CASE WHEN EXISTS(SELECT 1 FROM job_files WHERE job_id=? AND (weight_g IS NULL OR weight_g<=0)) THEN 'WEIGHT_PENDING' WHEN status IN ('WEIGHT_PENDING','WEIGHT_COMPLETED') THEN 'WEIGHT_COMPLETED' ELSE status END
+        WHERE id=?`).bind(f.job_id, f.job_id, f.job_id, now(), f.job_id, f.job_id)
+    ])
+    const missing = await one(c, 'SELECT COUNT(*) count FROM job_files WHERE job_id=? AND (weight_g IS NULL OR weight_g<=0)', f.job_id) as Row
+    const total = await one(c, 'SELECT COALESCE(SUM(weight_g*quantity),0) weight FROM job_files WHERE job_id=?', f.job_id) as Row
+    return c.json({ file_id: f.id, weight_g, quantity: f.quantity, job: job.number, billable_weight_g: Number(missing?.count) ? 0 : Number(total?.weight), missing_file_weight_count: Number(missing?.count) })
+  })
   app.post('/api/jobs/:job_id/magics/start', async c => { const j = await get(c, 'jobs', c.req.param('job_id'), 'Job'); const b = await body(c); const result = await database(c).batch([add(c, 'magics_sessions', { job_id: j.id, operator_name: text(b.operator_name, 'Operator'), workstation: text(b.workstation, 'Workstation'), status: 'STARTED' }), set(c, 'jobs', j.id, { status: 'MAGICS_REPAIR' })]); return c.json({ session_id: result[0].meta.last_row_id, status: 'STARTED' }) })
   app.post('/api/jobs/:job_id/magics/complete', async c => { const j = await get(c, 'jobs', c.req.param('job_id'), 'Job'); const b = await body(c); const s = await one(c, 'SELECT * FROM magics_sessions WHERE job_id=? ORDER BY id DESC LIMIT 1', j.id) as Row; if (!s) fail(404, 'Magics session/job not found'); const approved = boolean(b.approved, true); if (approved) { const missing = await one(c, 'SELECT COUNT(*) count FROM job_files WHERE job_id=? AND processed_path IS NULL', j.id) as Row; const total = await one(c, 'SELECT COUNT(*) count FROM job_files WHERE job_id=?', j.id) as Row; if (!Number(total?.count) || Number(missing?.count)) fail(409, 'Upload a processed Magics file for every job file before approval') } const status = approved ? 'APPROVED' : 'REPAIR_REQUIRED'; const job_status = approved ? 'READY_MACHINE_SOFTWARE' : 'MAGICS_REPAIR'; await database(c).batch([set(c, 'magics_sessions', s.id, { completed_at: now(), checker_name: text(b.checker_name, 'Checker'), approved, status }), set(c, 'jobs', j.id, { status: job_status })]); return c.json({ status, job_status }) })
   app.get('/api/magics/queue', async c => { const jobs = await all(c, `SELECT j.id,j.number,c.name customer,j.source,j.priority,j.status,j.received_at,(SELECT COUNT(*) FROM job_files f WHERE f.job_id=j.id) file_count,(SELECT COUNT(*) FROM job_files f WHERE f.job_id=j.id AND f.processed_path IS NOT NULL) processed_file_count FROM jobs j JOIN customers c ON c.id=j.customer_id WHERE j.status IN ('WAITING_MAGICS','MAGICS_REPAIR','READY_MACHINE_SOFTWARE') ORDER BY j.id DESC`); return c.json(await Promise.all(jobs.map(async (j: Row) => { const [s, files] = await Promise.all([one(c, 'SELECT id,operator_name operator,workstation,status,checker_name checker,approved,started_at,completed_at FROM magics_sessions WHERE job_id=? ORDER BY id DESC LIMIT 1', j.id), all(c, 'SELECT id,original_name name,processed_path FROM job_files WHERE job_id=? ORDER BY id', j.id)]); return { ...j, files: files.map((f: Row) => ({ id: f.id, name: f.name, processed: !!f.processed_path, original_url: `/api/job-files/${f.id}/download?version=original`, download_url: `/api/job-files/${f.id}/download` })), latest_session: s ? { ...s, approved: !!s.approved } : null } }))) })
@@ -78,6 +96,19 @@ export function registerProduction(app: Hono<Env>) {
   })
   app.post('/api/magics/agent/jobs/:job_id/files/:file_id/processed', async c => {
     authorizeMagicsAgent(c)
+    const jobId = integer(c.req.param('job_id'), 'Job id'); const j = await get(c, 'jobs', jobId, 'Job'); const f = await get(c, 'job_files', c.req.param('file_id'), 'File')
+    if (f.job_id !== j.id) fail(404, 'File is not part of this job')
+    if (['ON_PLATFORM','PRINTING','QC_PASSED','QC_FAILED','RESHOOT_PENDING'].includes(f.status)) fail(409, 'This file has already entered platform or print production')
+    const form = await c.req.parseBody(); const upload = form.processed_file
+    const processed = await store(c, upload, j, 'magics-processed')
+    try { await update(c, 'job_files', f.id, { processed_path: processed.key }); }
+    catch (e) { await files(c).delete(processed.key); throw e }
+    if (f.processed_path) await files(c).delete(f.processed_path)
+    return c.json({ file_id: f.id, name: processed.name, sha256: processed.digest, size: processed.size, processed: true })
+  })
+  // Browser-based fallback for Magics PCs where the local bridge cannot
+  // authenticate. Uses the signed-in ERP session instead of AGENT_TOKEN.
+  app.post('/api/jobs/:job_id/files/:file_id/magics-processed', async c => {
     const jobId = integer(c.req.param('job_id'), 'Job id'); const j = await get(c, 'jobs', jobId, 'Job'); const f = await get(c, 'job_files', c.req.param('file_id'), 'File')
     if (f.job_id !== j.id) fail(404, 'File is not part of this job')
     if (['ON_PLATFORM','PRINTING','QC_PASSED','QC_FAILED','RESHOOT_PENDING'].includes(f.status)) fail(409, 'This file has already entered platform or print production')
@@ -188,9 +219,108 @@ export function registerProduction(app: Hono<Env>) {
     const job = await one(c, 'SELECT id,number,status FROM jobs WHERE number=?', number) as Row
     return c.json({ job_id: job.id, job_number: job.number, status: job.status, files: attachments.length })
   })
+  app.post('/api/inbox/:inbox_id/create-job-from-rar', async c => {
+    const form = await c.req.formData()
+    const inbox = await get(c, 'inbox_messages', c.req.param('inbox_id'), 'Inbox message')
+    if (inbox.job_id) {
+      const existing = await get(c, 'jobs', inbox.job_id, 'Job')
+      const existingFileCount = await one(c, 'SELECT COUNT(*) count FROM job_files WHERE job_id=?', existing.id) as Row
+      return c.json({ job_id: existing.id, job_number: existing.number, status: existing.status, files: Number(existingFileCount?.count || 0), already_created: true })
+    }
+    const customerId = integer(form.get('customer_id'), 'Customer id')
+    const customer = await get(c, 'customers', customerId, 'Customer')
+    const attachments = await all(c, 'SELECT id,filename,mime_type,size_bytes,sha256,storage_key FROM inbox_attachments WHERE inbox_message_id=? ORDER BY id', inbox.id)
+    if (!attachments.length) fail(409, 'This email has no files saved in the ERP yet. Fetch its attachments first.')
+    const rarAttachments = attachments.filter((file: Row) => String(file.filename).toLowerCase().endsWith('.rar'))
+    if (!rarAttachments.length) fail(422, 'This email has no RAR attachment to extract.')
+    const expandedArchiveIds = JSON.parse(String(form.get('expanded_archives') || '[]'))
+    const expandedMetadata = JSON.parse(String(form.get('expanded_files') || '[]'))
+    if (!Array.isArray(expandedArchiveIds) || !Array.isArray(expandedMetadata)) fail(422, 'RAR extraction details are invalid.')
+    const expectedRarIds = new Set(rarAttachments.map((file: Row) => Number(file.id)))
+    const providedRarIds = new Set(expandedArchiveIds.map(Number))
+    if (expectedRarIds.size !== providedRarIds.size || [...expectedRarIds].some(id => !providedRarIds.has(id))) fail(422, 'Extract every RAR attachment in this email before creating the job.')
+    const uploads = form.getAll('expanded_file').filter((entry): entry is File => entry instanceof File)
+    if (!uploads.length || uploads.length !== expandedMetadata.length) fail(422, 'No extracted STL/CAM files were received. Please retry job creation.')
+    if (uploads.length > 200) fail(422, 'An email can add at most 200 extracted CAD files to one job.')
+    let totalSize = 0
+    const metadata = expandedMetadata.map((entry: any, index: number) => {
+      const name = String(entry?.name || uploads[index].name).split(/[\\/]/).pop() || ''
+      const archiveId = Number(entry?.archive_id)
+      if (!expectedRarIds.has(archiveId)) fail(422, 'An extracted file does not belong to a RAR attachment in this email.')
+      if (!/\.(stl|cam)$/i.test(name)) fail(422, `Only .stl and .cam files can be extracted from RAR archives (${name}).`)
+      if (name !== uploads[index].name) fail(422, 'An extracted filename did not match its uploaded file.')
+      totalSize += uploads[index].size
+      return { name, archiveId, upload: uploads[index] }
+    })
+    if (totalSize > 200 * 1024 * 1024) fail(413, 'Extracted CAD files exceed the 200 MB total limit.')
+
+    const number = code('WJ')
+    const stored: string[] = []
+    try {
+      const extracted = []
+      for (const item of metadata) {
+        const file = await store(c, item.upload, { number }, 'original')
+        stored.push(file.key)
+        extracted.push(file)
+      }
+      const directAttachments = attachments.filter((file: Row) => !String(file.filename).toLowerCase().endsWith('.rar'))
+      const statements = [add(c, 'jobs', { number, customer_id: customer.id, source: inbox.source || 'gmail', status: 'WAITING_MAGICS', priority: 'NORMAL', instructions: inbox.subject || null })]
+      for (const attachment of directAttachments) {
+        statements.push(stmt(c, 'INSERT INTO job_files (job_id,file_uid,original_name,original_path,sha256,quantity,status) SELECT id,?,?,?,?,1,? FROM jobs WHERE number=?', code('F'), attachment.filename, attachment.storage_key, attachment.sha256, 'RECEIVED', number))
+      }
+      for (const file of extracted) {
+        statements.push(stmt(c, 'INSERT INTO job_files (job_id,file_uid,original_name,original_path,sha256,quantity,status) SELECT id,?,?,?,?,1,? FROM jobs WHERE number=?', code('F'), file.name, file.key, file.digest, 'RECEIVED', number))
+      }
+      statements.push(stmt(c, "UPDATE inbox_messages SET customer_id=?,job_id=(SELECT id FROM jobs WHERE number=?),archived=1,status='IMPORTED' WHERE id=? AND job_id IS NULL", customer.id, number, inbox.id))
+      await database(c).batch(statements)
+    } catch (error) {
+      await Promise.all(stored.map(key => files(c).delete(key).catch(() => undefined)))
+      throw error
+    }
+    const job = await one(c, 'SELECT id,number,status FROM jobs WHERE number=?', number) as Row
+    return c.json({ job_id: job.id, job_number: job.number, status: job.status, files: attachments.filter((file: Row) => !String(file.filename).toLowerCase().endsWith('.rar')).length + metadata.length, extracted_files: metadata.length })
+  })
   app.post('/api/inbox/manual-upload', async c => {
     const b = await c.req.parseBody(); const customer = await get(c, 'customers', b.customer_id, 'Customer'); const quantity = integer(b.quantity ?? 1, 'Quantity'); const source = typeof b.source === 'string' ? b.source : 'whatsapp'; const number = code('WJ'); const uid = code('F'); const f = await store(c, b.upload, { number }, 'original')
     try { const result = await database(c).batch([add(c, 'jobs', { number, customer_id: customer.id, source, status: 'WAITING_MAGICS' }), stmt(c, 'INSERT INTO inbox_messages (source,sender,subject,body,customer_id,job_id,archived,status) SELECT ?,?,?,?,?,id,1,? FROM jobs WHERE number=?', source, b.sender || customer.whatsapp || customer.email || '', `${source} file intake`, b.message || '', customer.id, 'IMPORTED', number), stmt(c, 'INSERT INTO job_files (job_id,file_uid,original_name,original_path,sha256,quantity,status) SELECT id,?,?,?,?,?,? FROM jobs WHERE number=?', uid, f.name, f.key, f.digest, quantity, 'RECEIVED', number)]); return c.json({ job_id: result[0].meta.last_row_id, job_number: number, file_id: uid, archived: true }) } catch (e) { await files(c).delete(f.key); throw e }
+  })
+  app.post('/api/inbox/manual-upload-job', async c => {
+    const form = await c.req.formData()
+    const customer = await get(c, 'customers', form.get('customer_id'), 'Customer')
+    const sourceValue = String(form.get('source') || 'whatsapp')
+    if (!['whatsapp', 'manual'].includes(sourceValue)) fail(422, 'Source must be WhatsApp or manual upload')
+    const sender = String(form.get('sender') || '').trim().slice(0, 180) || (sourceValue === 'whatsapp' ? customer.whatsapp : null) || customer.email || customer.name
+    const message = String(form.get('message') || '').trim().slice(0, 4000)
+    const uploads = form.getAll('upload').filter((entry): entry is File => entry instanceof File && entry.size > 0)
+    if (!uploads.length) fail(422, 'Choose at least one file to create this job.')
+    if (uploads.length > 200) fail(422, 'A job can contain at most 200 files.')
+    let totalSize = 0
+    for (const upload of uploads) {
+      if (upload.size > 100 * 1024 * 1024) fail(413, `${upload.name} exceeds the 100 MB per-file limit.`)
+      totalSize += upload.size
+    }
+    if (totalSize > 200 * 1024 * 1024) fail(413, 'Selected files exceed the 200 MB total upload limit.')
+    const number = code('WJ')
+    const stored: Array<{key:string;name:string;digest:string;size:number;mime:string}> = []
+    try {
+      for (const upload of uploads) stored.push({...await store(c, upload, {number}, 'original'), mime:upload.type || 'application/octet-stream'})
+      const statements = [add(c, 'jobs', {number, customer_id:customer.id, source:sourceValue, status:'WAITING_MAGICS', priority:'NORMAL', instructions:message || null})]
+      statements.push(stmt(c, `INSERT INTO inbox_messages (source,sender,subject,body,customer_id,job_id,archived,status,attachments_archived)
+        SELECT ?,?,?,?, ?,id,1,'IMPORTED',1 FROM jobs WHERE number=?`, sourceValue, sender, 'File upload', message, customer.id, number))
+      for (const file of stored) {
+        const uid = code('F')
+        statements.push(stmt(c, `INSERT INTO job_files (job_id,file_uid,original_name,original_path,sha256,quantity,status)
+          SELECT id,?,?,?,?,1,'RECEIVED' FROM jobs WHERE number=?`, uid, file.name, file.key, file.digest, number))
+        statements.push(stmt(c, `INSERT INTO inbox_attachments (inbox_message_id,filename,mime_type,size_bytes,sha256,storage_key,gmail_part_key)
+          SELECT id,?,?,?,?,?,? FROM inbox_messages WHERE job_id=(SELECT id FROM jobs WHERE number=?)`, file.name, file.mime, file.size, file.digest, file.key, `upload:${stored.indexOf(file)}`, number))
+      }
+      await database(c).batch(statements)
+    } catch (error) {
+      await Promise.all(stored.map(file => files(c).delete(file.key).catch(() => undefined)))
+      throw error
+    }
+    const job = await one(c, 'SELECT id,number,status FROM jobs WHERE number=?', number) as Row
+    return c.json({job_id:job.id,job_number:job.number,status:job.status,files:stored.length})
   })
   app.get('/api/reports/quality', async c => { const a = await one(c, "SELECT COALESCE(SUM(expected_qty),0) expected_pieces,COALESCE(SUM(good_qty),0) good_pieces,COALESCE(SUM(bad_qty),0) bad_pieces FROM print_attempts WHERE status IN ('QC_PASSED','QC_FAILED')") as Row; const r = await one(c, "SELECT SUM(CASE WHEN source='INTERNAL_QC' THEN 1 ELSE 0 END) internal_reshoot_tickets,SUM(CASE WHEN source='CUSTOMER_RETURN' THEN 1 ELSE 0 END) customer_return_reshoots FROM reshoot_tickets") as Row; return c.json({ ...a, first_pass_yield_pct: a.expected_pieces ? Math.round(a.good_pieces / a.expected_pieces * 10000) / 100 : 0, internal_reshoot_tickets: r.internal_reshoot_tickets || 0, customer_return_reshoots: r.customer_return_reshoots || 0 }) })
 }

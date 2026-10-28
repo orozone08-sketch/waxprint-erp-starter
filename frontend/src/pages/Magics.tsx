@@ -1,6 +1,6 @@
 import {useEffect, useState} from 'react'
-import {BadgeCheck, Clock3, FolderOpen, Play, RefreshCw, Wrench, XCircle} from 'lucide-react'
-import {getJson, postJson} from '../api'
+import {BadgeCheck, Clock3, FolderOpen, Play, RefreshCw, Upload, Wrench, XCircle} from 'lucide-react'
+import {getJson, postForm, postJson} from '../api'
 import {jumpTo} from '../ui'
 
 type MagicsSession={id:number;operator:string;workstation:string;status:string;checker:string|null;approved:boolean;started_at:string;completed_at:string|null}
@@ -33,19 +33,19 @@ export default function Magics(){
 
  return <section className="panel">
   <div className="magicsHeader">
-   <div><h2>Magics Software Integration</h2><p>Local bridge for Materialise Magics repair, operator sessions and senior checker approval.</p></div>
+  <div><h2>Magics Software Integration</h2><p>Repair files in Materialise Magics, upload each output, and send the complete job for checker approval.</p></div>
    <button className="secondaryBtn" onClick={()=>load()} disabled={loading}><RefreshCw size={16}/>Refresh</button>
   </div>
 
   <div className="magicsSetup">
    <button className="setupCard clickableStat" type="button" onClick={()=>jumpTo('magics-queue')}><Wrench size={19}/><span><b>ERP queue</b><small>{queue.length} job(s) visible for Magics workflow</small></span></button>
-   <div className="setupCard"><FolderOpen size={19}/><span><b>Magics PC bridge</b><small>Run the included Python bridge on the other PC where Magics is installed.</small></span></div>
+   <div className="setupCard"><FolderOpen size={19}/><span><b>Upload from this page</b><small>Download each original, repair it in Magics, then upload the output below. No bridge token is needed.</small></span></div>
    <button className="setupCard clickableStat" type="button" onClick={()=>jumpTo('magics-queue')}><BadgeCheck size={19}/><span><b>Approval gate</b><small>Each job needs a processed file before checker approval.</small></span></button>
   </div>
 
   <div className="magicsInstructions" style={{margin:'14px 0',lineHeight:1.65}}>
-   <b>Connect the PC with Magics</b><br/>
-   On that PC, copy the <code>magics_agent</code> folder from this project. In PowerShell, open that folder and run <code>py -m pip install -r requirements.txt</code>. Copy <code>.env.example</code> to <code>.env</code>, then enter the ERP URL, the same AGENT_TOKEN configured as a Cloudflare Worker secret, and company ID <code>1</code> (Aditya) or <code>2</code> (Sunmoon). Start the bridge with <code>py agent.py</code> and keep it running. Open each downloaded file from its job's <code>Original</code> folder in Magics, save the repaired version to that job's <code>Processed</code> folder as <code>file-id__original-name.stl</code>, and the bridge uploads it. Magics itself stays on its installed PC.
+   <b>Manual upload (works without the local bridge)</b><br/>
+   Start the repair session, download a file using <b>Original</b>, repair and save it in Magics, then use <b>Upload output</b> next to that same file. Repeat for every file in the job. The ERP keeps each output with its matching original and only enables approval after all files have outputs. The Python bridge remains optional for automatic transfer.
   </div>
 
   <div className="magicsForm">
@@ -68,7 +68,7 @@ export default function Magics(){
    <div className="panelHead"><h2>Repair Queue</h2><small>Waiting and active jobs</small></div>
    <table>
     <thead><tr><th>Job</th><th>Customer</th><th>Files</th><th>Status</th><th>Latest Session</th><th>Action</th></tr></thead>
-    <tbody>{queue.map(j=><tr key={j.id}><td><b>{j.number}</b><small className="mutedCell">{j.priority}</small></td><td>{j.customer}</td><td><b>{j.processed_file_count}/{j.file_count} processed</b>{j.files.map(f=><small className="mutedCell" key={f.id}>{f.name} · <a href={f.original_url}>Original</a>{f.processed&&<> · <a href={f.download_url}>Magics output</a></>}</small>)}</td><td><span className="badge">{pretty(j.status)}</span></td><td>{j.latest_session?<span>{j.latest_session.operator}<small className="mutedCell">{pretty(j.latest_session.status)}</small></span>:'-'}</td><td><Actions job={j} disabled={loading} start={()=>run(()=>postJson(`/api/jobs/${j.id}/magics/start`,{operator_name:operator,workstation}),`${j.number} Magics repair started.`)} approve={()=>run(()=>postJson(`/api/jobs/${j.id}/magics/complete`,{checker_name:checker,approved:true}),`${j.number} approved by checker.`)} reject={()=>run(()=>postJson(`/api/jobs/${j.id}/magics/complete`,{checker_name:checker,approved:false}),`${j.number} sent back for repair.`)}/></td></tr>)}</tbody>
+    <tbody>{queue.map(j=><tr key={j.id}><td><b>{j.number}</b><small className="mutedCell">{j.priority}</small></td><td>{j.customer}</td><td><b>{j.processed_file_count}/{j.file_count} processed</b>{j.files.map(f=><small className="mutedCell" key={f.id}>{f.name} · <a href={f.original_url}>Original</a>{f.processed&&<> · <a href={f.download_url}>Processed output</a></>}<br/><label className="miniBtn" style={{display:'inline-flex',cursor:'pointer',marginTop:4}}><Upload size={13}/>{f.processed?'Replace output':'Upload output'}<input type="file" accept=".stl,.cam,.mgx,.3mf,.obj" hidden disabled={loading} onChange={e=>{const input=e.currentTarget;const file=input.files?.[0];if(file)void run(async()=>{const form=new FormData();form.append('processed_file',file);await postForm(`/api/jobs/${j.id}/files/${f.id}/magics-processed`,form)},`${file.name} uploaded as processed output.`);input.value=''}}/></label></small>)}</td><td><span className="badge">{pretty(j.status)}</span></td><td>{j.latest_session?<span>{j.latest_session.operator}<small className="mutedCell">{pretty(j.latest_session.status)}</small></span>:'-'}</td><td><Actions job={j} disabled={loading} start={()=>run(()=>postJson(`/api/jobs/${j.id}/magics/start`,{operator_name:operator,workstation}),`${j.number} Magics repair started.`)} approve={()=>run(()=>postJson(`/api/jobs/${j.id}/magics/complete`,{checker_name:checker,approved:true}),`${j.number} approved by checker.`)} reject={()=>run(()=>postJson(`/api/jobs/${j.id}/magics/complete`,{checker_name:checker,approved:false}),`${j.number} sent back for repair.`)}/></td></tr>)}</tbody>
    </table>
    {!queue.length&&<div className="emptyState inboxEmpty"><Clock3 size={30}/><p>No jobs waiting for Magics.</p></div>}
   </section>

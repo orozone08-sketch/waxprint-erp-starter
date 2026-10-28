@@ -17,8 +17,9 @@ export function fail(status: number, message: string): never {
   throw new HTTPException(status as 400, { message });
 }
 export function requireRoles(c: Ctx, ...roles: string[]) {
-  const role = c.get('user')?.role;
-  if (role !== 'SUPER_ADMIN' && !roles.includes(role)) fail(403, 'Admin access required');
+  const role = String(c.get('user')?.role || '').trim().toUpperCase();
+  const allowed = roles.map(value => value.trim().toUpperCase());
+  if (role !== 'SUPER_ADMIN' && !allowed.includes(role)) fail(403, 'Admin access required');
   return c.get('user');
 }
 export function activeCompanyId(c: Ctx): number {

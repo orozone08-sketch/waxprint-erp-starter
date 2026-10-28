@@ -5,7 +5,7 @@ import {getJson, postJson} from '../api'
 type Customer={id:number;code:string;name:string;email:string|null;whatsapp:string|null;default_rate:number;credit_days:number}
 type Supplier={id:number;code:string;name:string;gst_number:string|null;contact:string|null}
 type Machine={id:number;code:string;name:string;model:string|null;serial_number:string|null;status:string}
-type Material={id:number;code:string;name:string;unit:string;stock:number;minimum_stock:number}
+type Material={id:number;code:string;name:string;unit:string;stock:number;minimum_stock:number;density_g_cm3:number|null}
 type Integrations={gmail:{enabled:boolean;configured:boolean;client_configured:boolean;bridge_configured:boolean;storage_enabled:boolean;mode:string;user:string;mailbox:string;fetch_query:string;fetch_limit:number;redirect_uri:string;archive_label:string};magics:{agent_token_configured:boolean;workstation_default:string;local_agent_folder:string;queue_endpoint:string}}
 type GmailSave={ok:boolean;message:string;gmail:Integrations['gmail']}
 type GmailTest={ok:boolean;message:string;gmail:Integrations['gmail']}
@@ -17,6 +17,7 @@ export default function SettingsPage(){
  const[suppliers,setSuppliers]=useState<Supplier[]>([])
  const[machines,setMachines]=useState<Machine[]>([])
  const[materials,setMaterials]=useState<Material[]>([])
+ const[densities,setDensities]=useState<Record<number,string>>({})
  const[integrations,setIntegrations]=useState<Integrations|null>(null)
  const[customer,setCustomer]=useState({name:'',email:'',whatsapp:'',default_rate:'300',credit_days:'30'})
  const[supplier,setSupplier]=useState({code:'',name:'',gst_number:'',contact:''})
@@ -42,7 +43,7 @@ export default function SettingsPage(){
    getJson<Material[]>('/api/materials'),
    getJson<Integrations>('/api/settings/integrations')
   ])
-  setCustomers(c);setSuppliers(s);setMachines(ma);setMaterials(mt);setIntegrations(i)
+  setCustomers(c);setSuppliers(s);setMachines(ma);setMaterials(mt);setDensities(Object.fromEntries(mt.map(m=>[m.id,m.density_g_cm3==null?'':String(m.density_g_cm3)])));setIntegrations(i)
   setGmailForm(form=>({
    ...form,
    enabled:i.gmail.enabled,
@@ -64,6 +65,7 @@ export default function SettingsPage(){
  const addSupplier=()=>run(()=>postJson('/api/suppliers',{code:supplier.code,name:supplier.name,gst_number:supplier.gst_number||null,contact:supplier.contact||null}),`${supplier.name} supplier added.`).then(()=>setSupplier({code:'',name:'',gst_number:'',contact:''}))
  const addMachine=()=>run(()=>postJson('/api/machines',{code:machine.code,name:machine.name,model:machine.model||null,serial_number:machine.serial_number||null,status:machine.status}),`${machine.name} machine added.`).then(()=>setMachine({code:'',name:'',model:'',serial_number:'',status:'AVAILABLE'}))
  const addMaterial=()=>run(()=>postJson('/api/materials',{code:material.code,name:material.name,unit:material.unit,minimum_stock:Number(material.minimum_stock)||0}),`${material.name} material added.`).then(()=>setMaterial({code:'',name:'',unit:'kit',minimum_stock:'1'}))
+ const saveDensity=(m:Material)=>{const value=Number(densities[m.id]);if(!Number.isFinite(value)||value<=0){setError(`Enter a valid density for ${m.name}.`);return}return run(()=>postJson(`/api/materials/${m.id}/density`,{density_g_cm3:value}),`${m.name} density saved.`)}
  const saveGmail=(event:FormEvent)=>{event.preventDefault();return run(async()=>{
   const saved=await postJson<GmailSave>('/api/settings/gmail',{
    enabled:true,
@@ -212,6 +214,8 @@ export default function SettingsPage(){
      <button className="primaryBtn" onClick={addMaterial} disabled={loading||!material.code||!material.name}><Plus size={16}/>Add Material</button>
     </div>
     <MiniTable rows={materials.slice(0,6).map(m=>[m.code,m.name,`${m.stock} ${m.unit}`,`Min ${m.minimum_stock}`])}/>
+    <p className="settingsHint">Density is used by the STL weight calculator. Enter the g/cm³ value configured for that material in Easy3D or Magics.</p>
+    <div className="settingsMiniTable settingsDensityList">{materials.map(m=><p key={m.id}><span>{m.name}</span><span><input aria-label={`${m.name} density in grams per cubic centimeter`} value={densities[m.id]??''} onChange={e=>setDensities({...densities,[m.id]:e.target.value})} inputMode="decimal" placeholder="Density g/cm³"/></span><span><button className="miniBtn" type="button" onClick={()=>saveDensity(m)} disabled={loading||!densities[m.id]}><Save size={14}/>Save density</button></span></p>)}</div>
    </MasterPanel>
   </section>
  </section>

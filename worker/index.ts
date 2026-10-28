@@ -4,6 +4,7 @@ import { Env, activeCompanyId, all, database, one, requireRoles } from './shared
 import { registerAuth, registerAuthRoutes } from './auth';
 import { registerProduction } from './production';
 import { registerFinance } from './finance';
+import { registerWhatsapp } from './whatsapp';
 import { schema } from './schema';
 
 const app = new Hono<Env>();
@@ -31,7 +32,7 @@ app.get('/health', health);
 registerAuth(app);
 app.use('/api/*', async (c, next) => {
   const method = c.req.method.toUpperCase();
-  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) || ['/api/auth/login', '/api/auth/logout', '/api/integrations/gmail/push'].includes(c.req.path) || c.req.path.startsWith('/api/integrations/gmail/bridge/')) return next();
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) || ['/api/auth/login', '/api/auth/logout', '/api/integrations/gmail/push', '/api/integrations/whatsapp/webhook'].includes(c.req.path) || c.req.path.startsWith('/api/integrations/gmail/bridge/')) return next();
   const originalRequest = c.req.raw.clone();
   await next();
   const actor = c.get('user');
@@ -85,6 +86,7 @@ app.get('/api/admin/all-data', async c => {
 });
 registerProduction(app);
 registerFinance(app);
+registerWhatsapp(app);
 app.all('/api/*', c => c.json({detail: 'Endpoint not found'}, 404));
 app.all('*', c => c.env.ASSETS.fetch(c.req.raw));
 export default app;
