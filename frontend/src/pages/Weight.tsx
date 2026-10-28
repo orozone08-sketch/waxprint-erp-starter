@@ -3,7 +3,7 @@ import {Calculator, RefreshCw, Scale, WalletCards} from 'lucide-react'
 import {getJson, postJson, fetchBlob} from '../api'
 import {Job} from '../types'
 import {jumpTo} from '../ui'
-import {STLLoader} from 'three/examples/jsm/loaders/STLLoader.js'
+import {calculateStlWeight} from '../stlWeight'
 
 type Customer={id:number;code:string;name:string;email:string|null;whatsapp:string|null;default_rate:number;credit_days:number}
 type JobFile={id:number;name:string;download_url:string;quantity:number;weight_g:number|null;weight_source:string|null;weight_recorded_at:string|null}
@@ -63,29 +63,7 @@ export default function Weight({role}:{role:string}){
   const material=materials.find(m=>String(m.id)===materialId)
   if(!material?.density_g_cm3)throw new Error('Set this material’s density in Settings → Materials first.')
   const blob=await fetchBlob(file.download_url)
-  const geometry=new STLLoader().parse(await blob.arrayBuffer())
-  try{
-   const positions=geometry.getAttribute('position')
-   if(!positions||positions.count<3||positions.count%3)throw new Error(`${file.name}: STL has no usable triangle mesh.`)
-   let sixVolume=0
-   const edgeBalance=new Map<string,{count:number;direction:number}>()
-   const vertexKey=(x:number,y:number,z:number)=>`${x===0?0:x},${y===0?0:y},${z===0?0:z}`
-   const addEdge=(a:string,b:string)=>{const forward=a<b;const key=forward?`${a}|${b}`:`${b}|${a}`;const edge=edgeBalance.get(key)||{count:0,direction:0};edge.count++;edge.direction+=forward?1:-1;edgeBalance.set(key,edge)}
-   for(let i=0;i<positions.count;i+=3){
-    const ax=positions.getX(i),ay=positions.getY(i),az=positions.getZ(i)
-    const bx=positions.getX(i+1),by=positions.getY(i+1),bz=positions.getZ(i+1)
-    const cx=positions.getX(i+2),cy=positions.getY(i+2),cz=positions.getZ(i+2)
-    if(![ax,ay,az,bx,by,bz,cx,cy,cz].every(Number.isFinite))throw new Error(`${file.name}: STL contains invalid coordinates.`)
-    sixVolume+=ax*(by*cz-bz*cy)+ay*(bz*cx-bx*cz)+az*(bx*cy-by*cx)
-    const a=vertexKey(ax,ay,az),b=vertexKey(bx,by,bz),c=vertexKey(cx,cy,cz)
-    addEdge(a,b);addEdge(b,c);addEdge(c,a)
-   }
-   for(const edge of edgeBalance.values())if(edge.count!==2||edge.direction!==0)throw new Error(`${file.name}: mesh is open or has inconsistent triangle directions. Repair it in Easy3D or Magics before calculating weight.`)
-   const volumeMm3=Math.abs(sixVolume/6)
-   const weightG=Number((volumeMm3*material.density_g_cm3/1000).toFixed(6))
-   if(!Number.isFinite(weightG)||weightG<=0)throw new Error(`${file.name}: no positive volume. Check that the STL is closed and repaired in Easy3D or Magics.`)
-   return {weightG:Number(weightG.toFixed(3)),volumeMm3:Number(volumeMm3.toFixed(3))}
-  }finally{geometry.dispose()}
+  return calculateStlWeight(blob,material.density_g_cm3,file.name)
  }
  const calculateAllMissing=async()=>{
   const pending=active.flatMap(d=>d.files.filter(f=>(!f.weight_g||f.weight_g<=0)&&f.name.toLowerCase().endsWith('.stl')).map(file=>({file,job:d.job})))
