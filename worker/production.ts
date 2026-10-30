@@ -45,6 +45,46 @@ async function download(c: C, key: string, name: string) {
 export function registerProduction(app: Hono<Env>) {
   app.get('/api/jobs', async c => { const status = c.req.query('status'); return c.json(await all(c, `SELECT j.id,j.number,c.name customer,j.customer_id,j.source,j.status,j.priority,j.billable_weight_g,j.reshoot_weight_g,j.received_at,(SELECT COUNT(*) FROM job_files f WHERE f.job_id=j.id) file_count,(SELECT COUNT(*) FROM job_files f WHERE f.job_id=j.id AND (f.weight_g IS NULL OR f.weight_g<=0)) missing_file_weight_count FROM jobs j JOIN customers c ON c.id=j.customer_id ${status ? 'WHERE j.status=?' : ''} ORDER BY j.id DESC`, ...(status ? [status] : []))) })
   app.post('/api/jobs', async c => { const b = await body(c); await get(c, 'customers', b.customer_id, 'Customer'); const j = await insert(c, 'jobs', { number: code('WJ'), customer_id: b.customer_id, source: b.source ?? 'manual', priority: b.priority ?? 'NORMAL', instructions: b.instructions ?? null }); return c.json({ id: j.id, number: j.number, status: j.status }) })
+  app.delete('/api/jobs/:job_id', async c => {
+    requireRoles(c, 'ADMIN')
+    const job = await get(c, 'jobs', c.req.param('job_id'), 'Job')
+    const jobFiles = await all(c, 'SELECT id,original_path,processed_path FROM job_files WHERE job_id=?', job.id) as Row[]
+    const fileIds = jobFiles.map((file: Row) => Number(file.id))
+    const platformRows = fileIds.length ? await all(c, 'SELECT DISTINCT platform_id FROM platform_files WHERE job_file_id IN (SELECT id FROM job_files WHERE job_id=?)', job.id) as Row[] : []
+    const platformIds = platformRows.map((platform: Row) => Number(platform.platform_id))
+    const dispatches = await all(c, 'SELECT packing_photo_path FROM dispatches WHERE job_id=?', job.id) as Row[]
+    const storedKeys = [
+      ...jobFiles.flatMap((file: Row) => [file.original_path,file.processed_path]),
+      ...dispatches.map((dispatch: Row) => dispatch.packing_photo_path),
+    ].filter((key: unknown): key is string => typeof key === 'string' && !!key)
+    const bucket = storedKeys.length ? files(c) : null
+    const statements = [
+      stmt(c, 'UPDATE inbox_messages SET job_id=NULL WHERE job_id=?', job.id),
+      stmt(c, 'UPDATE invoice_lines SET job_id=NULL WHERE job_id=?', job.id),
+      stmt(c, "UPDATE expenses SET related_id=NULL WHERE related_type='JOB' AND related_id=?", job.id),
+      stmt(c, 'UPDATE employee_advances SET job_id=NULL WHERE job_id=?', job.id),
+      stmt(c, 'UPDATE travel_advances SET job_id=NULL WHERE job_id=?', job.id),
+      stmt(c, 'UPDATE inventory_transactions SET job_id=NULL WHERE job_id=?', job.id),
+      stmt(c, 'DELETE FROM customer_returns WHERE job_id=?', job.id),
+      stmt(c, 'DELETE FROM reshoot_tickets WHERE job_id=?', job.id),
+      stmt(c, 'DELETE FROM magics_sessions WHERE job_id=?', job.id),
+      stmt(c, 'DELETE FROM dispatches WHERE job_id=?', job.id),
+    ]
+    if (fileIds.length) {
+      statements.push(stmt(c, 'DELETE FROM print_attempts WHERE job_file_id IN (SELECT id FROM job_files WHERE job_id=?)', job.id))
+      statements.push(stmt(c, 'DELETE FROM platform_files WHERE job_file_id IN (SELECT id FROM job_files WHERE job_id=?)', job.id))
+      statements.push(stmt(c, 'DELETE FROM job_files WHERE job_id=?', job.id))
+    }
+    statements.push(stmt(c, 'DELETE FROM jobs WHERE id=?', job.id))
+    if (platformIds.length) statements.push(stmt(c, `DELETE FROM platforms WHERE id IN (${platformIds.map(() => '?').join(',')}) AND NOT EXISTS(SELECT 1 FROM platform_files WHERE platform_id=platforms.id) AND NOT EXISTS(SELECT 1 FROM print_attempts WHERE platform_id=platforms.id) AND NOT EXISTS(SELECT 1 FROM inventory_transactions WHERE platform_id=platforms.id)`, ...platformIds))
+    await database(c).batch(statements)
+    if (bucket) {
+      const cleanup = await Promise.allSettled(storedKeys.map(key => bucket.delete(key)))
+      const failedCleanup = cleanup.filter(result => result.status === 'rejected').length
+      if (failedCleanup) console.error(`Could not remove ${failedCleanup} stored object(s) for deleted job ${job.number}`)
+    }
+    return c.json({ok:true,job:job.number})
+  })
   app.get('/api/jobs/:job_id', async c => {
     const j = await get(c, 'jobs', c.req.param('job_id'), 'Job'); const customer = await get(c, 'customers', j.customer_id, 'Customer')
     const [files, magics, reshoots, dispatches, returns] = await Promise.all([

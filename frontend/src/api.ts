@@ -58,6 +58,12 @@ export async function postJson<T>(path:string, body:any):Promise<T>{
  return r.json()
 }
 
+export async function deleteJson<T>(path:string):Promise<T>{
+ const r=await fetch(`${API}${path}`,{method:'DELETE',headers:authHeaders()})
+ if(!r.ok)throw new Error(await errorText(r))
+ return r.json()
+}
+
 export async function postForm<T>(path:string, body:FormData):Promise<T>{
  const r=await fetch(`${API}${path}`,{method:'POST',headers:authHeaders(),body})
  if(!r.ok)throw new Error(await errorText(r))

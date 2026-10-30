@@ -79,7 +79,9 @@ app.get('/api/admin/all-data', async c => {
   const centralOnly = new Set(['app_users', 'audit_logs']);
   for (const table of Object.keys(schema)) {
     if (centralOnly.has(table)) continue;
-    let rows = await all(c, `SELECT * FROM "${table}" ORDER BY id DESC`);
+    let rows = table === 'jobs'
+      ? await all(c, 'SELECT jobs.*,customers.name customer_name FROM jobs JOIN customers ON customers.id=jobs.customer_id ORDER BY jobs.id DESC')
+      : await all(c, `SELECT * FROM "${table}" ORDER BY id DESC`);
     datasets.push({key: aliases[table] || table, label: table === 'app_users' ? 'Login Users' : table.replaceAll('_', ' '), count: rows.length, rows});
   }
   return c.json({total_records: datasets.reduce((sum, d) => sum + d.count, 0), datasets});
