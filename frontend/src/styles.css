@@ -330,6 +330,25 @@ tr:last-child td{border-bottom:0}
 .fileUploadBtn{display:inline-flex;align-items:center;gap:5px;border:1px dashed #ffc7c7;border-radius:8px;background:#fff7f7;color:var(--wax);padding:7px 9px;font-size:12px;font-weight:900;cursor:pointer;white-space:nowrap}
 .fileUploadBtn input{display:none}
 .fileUploadBtn:hover,.fileUploadBtn:focus-within{border-color:var(--wax);background:#fff;outline:0}
+.jobTrackerToolbar{display:flex;align-items:end;gap:12px;flex-wrap:wrap;margin:14px 0;padding:12px;background:#f8fafc;border:1px solid #edf1f5;border-radius:8px}
+.jobTrackerToolbar label{display:flex;flex-direction:column;gap:5px;min-width:220px;color:#596979;font-size:11px;font-weight:900}
+.jobTrackerToolbar input,.jobTrackerToolbar select{height:38px;min-width:220px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);padding:0 10px;outline:0}
+.jobTrackerToolbar input:focus,.jobTrackerToolbar select:focus{border-color:var(--wax);box-shadow:0 0 0 3px rgba(233,77,79,.1)}
+.jobTrackerToolbar>span{margin-left:auto;padding:0 4px 10px;color:var(--muted);font-size:12px;font-weight:800}
+.jobTrackerTableWrap{width:100%;overflow:auto;border:1px solid var(--line);border-radius:8px;background:#fff}
+.jobTrackerTable{min-width:1120px}
+.jobTrackerTable th{position:sticky;top:0;z-index:1}
+.jobTrackerTable td{vertical-align:top;max-width:360px}
+.jobTrackerTable td:first-child b,.jobTrackerTable td:nth-child(4)>b,.jobTrackerTable td:nth-child(5)>b{display:block;color:#132838}
+.jobTrackerSub{display:block;margin-top:4px;color:#718096;font-size:11px;line-height:1.35}
+.jobTrackerFiles{display:flex;flex-direction:column;align-items:flex-start;gap:7px;min-width:240px}
+.jobTrackerFile{display:grid;grid-template-columns:minmax(130px,1fr) auto;gap:3px 8px;align-items:center;width:100%;padding:7px 8px;border:1px solid #edf1f5;border-radius:8px;background:#fbfcfd}
+.jobTrackerFile>div:first-child{min-width:0;overflow:hidden}
+.jobTrackerFile>div:first-child .tableLinkBtn{max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.jobTrackerFile>div:first-child small{display:block;color:#718096;font-size:10px;margin-top:3px}
+.jobTrackerFile>.badge{justify-self:end}
+.jobTrackerFileActions{grid-column:1/-1;display:flex;align-items:center;gap:5px}
+.jobTrackerFileActions .fileRepairBtn{padding:4px 6px}
 .stlOverlay{position:fixed;inset:0;z-index:80;background:rgba(7,24,39,.62);display:grid;place-items:center;padding:22px}
 .stlModal{width:min(1040px,100%);height:min(720px,90vh);background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 24px 80px rgba(0,0,0,.28);display:grid;grid-template-rows:auto minmax(0,1fr);overflow:hidden}
 .stlModalHead{display:flex;align-items:center;justify-content:space-between;gap:16px;border-bottom:1px solid var(--line);padding:14px 16px}
