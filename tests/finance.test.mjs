@@ -14,7 +14,7 @@ test('finance records stock, invoices, payment status and report totals', async 
   assert.equal((await json(await h.request('/api/materials')))[0].stock,7);
   const customer=await json(await post('customers',{name:'Customer',default_rate:5}));
   const job=await json(await post('jobs',{customer_id:customer.id}));
-  h.db.prepare('UPDATE jobs SET billable_weight_g=20,weight_recorded_at=? WHERE id=?').run(new Date().toISOString(),job.id);
+  h.db.prepare("UPDATE jobs SET status='WEIGHT_COMPLETED',billable_weight_g=20,weight_recorded_at=? WHERE id=?").run(new Date().toISOString(),job.id);
   const invoice=await json(await post('invoices/from-job',{job_id:job.id,tax_rate:10,extra_charge:5}));
   assert.equal(invoice.subtotal,105);assert.equal(invoice.total,115.5);
   await json(await post('payments',{invoice_id:invoice.id,amount:50}));
@@ -35,9 +35,10 @@ test('failed financial batches leave no partial purchases, invoices, travel or p
   assert.equal((await post('purchases',{supplier_id:supplier.id,material_id:material.id,quantity:10,rate:2})).status,500);
   assert.equal(h.db.prepare('SELECT COUNT(*) n FROM purchases').get().n,0);h.db.exec('DROP TRIGGER reject_inventory');
   const customer=await json(await post('customers',{name:'Customer',default_rate:5}));const job=await json(await post('jobs',{customer_id:customer.id}));
+  h.db.prepare("UPDATE jobs SET status='WEIGHT_COMPLETED',billable_weight_g=1,weight_recorded_at=? WHERE id=?").run(new Date().toISOString(),job.id);
   h.db.exec("CREATE TRIGGER reject_lines BEFORE INSERT ON invoice_lines BEGIN SELECT RAISE(ABORT,'forced failure'); END;");
   assert.equal((await post('invoices/from-job',{job_id:job.id})).status,500);
-  assert.equal(h.db.prepare('SELECT COUNT(*) n FROM invoices').get().n,0);assert.equal(h.db.prepare('SELECT status FROM jobs WHERE id=?').get(job.id).status,'FILES_RECEIVED');h.db.exec('DROP TRIGGER reject_lines');
+  assert.equal(h.db.prepare('SELECT COUNT(*) n FROM invoices').get().n,0);assert.equal(h.db.prepare('SELECT status FROM jobs WHERE id=?').get(job.id).status,'WEIGHT_COMPLETED');h.db.exec('DROP TRIGGER reject_lines');
   const invoice=await json(await post('invoices/from-job',{job_id:job.id}));
   h.db.exec("CREATE TRIGGER reject_status BEFORE UPDATE ON invoices BEGIN SELECT RAISE(ABORT,'forced failure'); END;");
   assert.equal((await post('payments',{invoice_id:invoice.id,amount:1})).status,500);assert.equal(h.db.prepare('SELECT COUNT(*) n FROM payments').get().n,0);h.db.exec('DROP TRIGGER reject_status');
