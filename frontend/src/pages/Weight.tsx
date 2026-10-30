@@ -9,16 +9,12 @@ type Customer={id:number;code:string;name:string;email:string|null;whatsapp:stri
 type JobFile={id:number;name:string;download_url:string;quantity:number;weight_g:number|null;weight_source:string|null;weight_recorded_at:string|null}
 type JobDetail={job:Job;files:JobFile[]}
 type WeightSource='MAGICS'|'EASY3D'|'MANUAL'|'AUTO_STL'
-type Material={id:number;code:string;name:string;density_g_cm3:number|null}
-
 const money=(n:number)=>new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR',maximumFractionDigits:0}).format(n)
 export default function Weight({role}:{role:string}){
  const canSeeFinancial=role.toUpperCase()==='ADMIN'
  const[jobs,setJobs]=useState<Job[]>([])
  const[details,setDetails]=useState<JobDetail[]>([])
  const[customers,setCustomers]=useState<Customer[]>([])
- const[materials,setMaterials]=useState<Material[]>([])
- const[materialId,setMaterialId]=useState('')
  const[weights,setWeights]=useState<Record<number,string>>({})
  const[sources,setSources]=useState<Record<number,WeightSource>>({})
  const[notice,setNotice]=useState('')
@@ -28,13 +24,11 @@ export default function Weight({role}:{role:string}){
 
  const load=async()=>{
   const jobRows=await getJson<Job[]>('/api/jobs')
-  const [detailRows,customerRows,materialRows]=await Promise.all([
+  const [detailRows,customerRows]=await Promise.all([
    Promise.all(jobRows.map(j=>getJson<JobDetail>(`/api/jobs/${j.id}`))),
-   canSeeFinancial?getJson<Customer[]>('/api/customers'):Promise.resolve([] as Customer[]),
-   getJson<Material[]>('/api/materials')
+   canSeeFinancial?getJson<Customer[]>('/api/customers'):Promise.resolve([] as Customer[])
   ])
-  setJobs(jobRows);setDetails(detailRows);setCustomers(customerRows);setMaterials(materialRows)
-  setMaterialId(current=>current||String(materialRows.find(m=>m.density_g_cm3)?.id||''))
+  setJobs(jobRows);setDetails(detailRows);setCustomers(customerRows)
   setWeights(Object.fromEntries(detailRows.flatMap(d=>d.files.map(f=>[f.id,f.weight_g==null?'':String(f.weight_g)]))))
   setSources(Object.fromEntries(detailRows.flatMap(d=>d.files.map(f=>[f.id,(f.weight_source||'EASY3D') as WeightSource]))))
  }
@@ -60,10 +54,8 @@ export default function Weight({role}:{role:string}){
  }
  const calculateFile=async(file:JobFile)=>{
   if(!file.name.toLowerCase().endsWith('.stl'))throw new Error(`${file.name} is not an STL. Enter its measured weight from Easy3D or Magics.`)
-  const material=materials.find(m=>String(m.id)===materialId)
-  if(!material?.density_g_cm3)throw new Error('Set this material’s density in Settings → Materials first.')
   const blob=await fetchBlob(file.download_url)
-  return calculateStlWeight(blob,material.density_g_cm3,file.name)
+  return calculateStlWeight(blob,file.name)
  }
  const calculateAllMissing=async()=>{
   const pending=active.flatMap(d=>d.files.filter(f=>(!f.weight_g||f.weight_g<=0)&&f.name.toLowerCase().endsWith('.stl')).map(file=>({file,job:d.job})))
@@ -82,22 +74,20 @@ export default function Weight({role}:{role:string}){
  }
  const calculateAndSave=async(file:JobFile,job:Job)=>{
   setLoading(true);setError('');setNotice('')
-  try{const result=await calculateFile(file);setWeights(current=>({...current,[file.id]:String(result.weightG)}));setSources(current=>({...current,[file.id]:'AUTO_STL'}));await postJson(`/api/job-files/${file.id}/weight`,{weight_g:result.weightG,weight_source:'AUTO_STL'});setNotice(`${file.name}: volume ${result.volumeMm3} mm³; calculated ${result.weightG} g using the selected density. Saved to ${job.number}.`);await load()}
+  try{const result=await calculateFile(file);setWeights(current=>({...current,[file.id]:String(result.weightG)}));setSources(current=>({...current,[file.id]:'AUTO_STL'}));await postJson(`/api/job-files/${file.id}/weight`,{weight_g:result.weightG,weight_source:'AUTO_STL'});setNotice(`${file.name}: volume ${result.volumeCm3} cm³ × 0.9 = ${result.weightG} g. Saved to ${job.number}.`);await load()}
   catch(x){setError(String(x))}
   finally{setLoading(false)}
  }
 
  useEffect(()=>{
-  const material=materials.find(m=>String(m.id)===materialId)
-  if(!material?.density_g_cm3)return
   const pending=details
    .filter(d=>d.files.length>0&&d.job.status!=='INVOICED')
    .flatMap(d=>d.files.filter(f=>(!f.weight_g||f.weight_g<=0)&&f.name.toLowerCase().endsWith('.stl')).map(file=>({file,job:d.job})))
-   .filter(({file})=>!automaticAttempts.current.has(`${file.id}:${material.id}:${material.density_g_cm3}`))
+   .filter(({file})=>!automaticAttempts.current.has(String(file.id)))
   if(!pending.length)return
-  for(const {file} of pending)automaticAttempts.current.add(`${file.id}:${material.id}:${material.density_g_cm3}`)
+  for(const {file} of pending)automaticAttempts.current.add(String(file.id))
   const calculate=async()=>{
-   setLoading(true);setError('');setNotice(`Automatically calculating ${pending.length} missing STL weight(s) using ${material.name} density (${material.density_g_cm3} g/cm³)…`)
+   setLoading(true);setError('');setNotice(`Automatically calculating ${pending.length} missing STL weight(s) using the volume × 0.9 formula…`)
    let saved=0;const failed:string[]=[]
    try{
     for(const {file} of pending){
@@ -105,18 +95,18 @@ export default function Weight({role}:{role:string}){
      catch(x){failed.push(`${file.name}: ${String(x)}`)}
     }
     await load()
-    setNotice(`${saved} STL file weight(s) automatically calculated and saved using ${material.name}.${failed.length?` ${failed.length} file(s) need attention.`:''}`)
+    setNotice(`${saved} STL file weight(s) automatically calculated and saved using volume × 0.9.${failed.length?` ${failed.length} file(s) need attention.`:''}`)
     if(failed.length)setError(failed.join(' · '))
    }catch(x){setError(String(x))}
    finally{setLoading(false)}
   }
   void calculate()
- },[details,materials,materialId])
+ },[details])
 
  return <section className="panel">
   <div className="weightHeader">
-   <div><h2>Weight</h2><p>Missing STL weights calculate and save automatically here using the selected material density. STL coordinates are treated as millimetres; billing stays blocked while any job file has no weight.</p></div>
-   <div className="weightHeaderActions"><label>Material density<select value={materialId} onChange={e=>setMaterialId(e.target.value)}><option value="">Choose material</option>{materials.map(m=><option key={m.id} value={m.id}>{m.name} · {m.density_g_cm3?`${m.density_g_cm3} g/cm³`:'density not set'}</option>)}</select></label><button className="secondaryBtn" onClick={()=>load().catch(x=>setError(String(x)))} disabled={loading}><RefreshCw size={16}/>Refresh</button></div>
+   <div><h2>Weight</h2><p>STL weight uses your Magics rule: enclosed mesh volume in cm³ × 0.9 = grams. Missing STL weights calculate and save automatically; billing stays blocked while any job file has no weight.</p></div>
+   <div className="weightHeaderActions"><button className="secondaryBtn" onClick={()=>load().catch(x=>setError(String(x)))} disabled={loading}><RefreshCw size={16}/>Refresh</button></div>
   </div>
 
   <div className="platformStats">
@@ -129,7 +119,7 @@ export default function Weight({role}:{role:string}){
   {error&&<div className="errorBox">{error}</div>}
 
   <section className="subPanel" id="weight-entry">
-   <div className="panelHead"><div><h2>Per-file weight checklist</h2><small>{active.length} job(s) · {missing} file(s) missing</small></div><button className="primaryBtn" type="button" onClick={calculateAllMissing} disabled={loading||!materials.find(m=>String(m.id)===materialId)?.density_g_cm3}><Calculator size={16}/>{loading?'Calculating…':'Calculate all missing STL weights'}</button></div>
+   <div className="panelHead"><div><h2>Per-file weight checklist</h2><small>{active.length} job(s) · {missing} file(s) missing</small></div><button className="primaryBtn" type="button" onClick={calculateAllMissing} disabled={loading}><Calculator size={16}/>{loading?'Calculating…':'Calculate all missing STL weights'}</button></div>
    <div className="weightCards">
     {active.map(({job,files})=>{
      const total=files.reduce((sum,f)=>sum+(Number(weights[f.id])||f.weight_g||0)*f.quantity,0)
@@ -143,7 +133,7 @@ export default function Weight({role}:{role:string}){
          <div className="fileWeightName"><b>{file.name}</b><small>Per-piece weight · quantity {file.quantity}{saved?` · saved from ${pretty(file.weight_source||'MANUAL')}`:' · weight missing'}</small></div>
          <label>Weight (g)<input aria-label={`${file.name} weight in grams`} value={weights[file.id]||''} onChange={e=>setWeights({...weights,[file.id]:e.target.value})} inputMode="decimal" placeholder="Enter Magics / Easy3D result"/></label>
          <label>Measured in<select value={sources[file.id]||'EASY3D'} onChange={e=>setSources({...sources,[file.id]:e.target.value as WeightSource})}><option value="MAGICS">Magics</option><option value="EASY3D">Easy3D</option><option value="MANUAL">Other / manual</option></select></label>
-         <div className="fileWeightActions">{file.name.toLowerCase().endsWith('.stl')&&<button className="miniBtn" disabled={loading||!materials.find(m=>String(m.id)===materialId)?.density_g_cm3} onClick={()=>calculateAndSave(file,job)}><Calculator size={14}/>Calculate STL</button>}<button className="miniBtn" disabled={loading} onClick={()=>saveFileWeight(file,job)}><Scale size={14}/>{saved?'Update':'Save'} measured weight</button></div>
+         <div className="fileWeightActions">{file.name.toLowerCase().endsWith('.stl')&&<button className="miniBtn" disabled={loading} onClick={()=>calculateAndSave(file,job)}><Calculator size={14}/>Calculate STL</button>}<button className="miniBtn" disabled={loading} onClick={()=>saveFileWeight(file,job)}><Scale size={14}/>{saved?'Update':'Save'} measured weight</button></div>
         </div>
        })}
       </div>

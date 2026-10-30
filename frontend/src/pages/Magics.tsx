@@ -8,13 +8,10 @@ type MagicsSession={id:number;operator:string;workstation:string;status:string;c
 type MagicsFile={id:number;name:string;processed:boolean;original_url:string;download_url:string}
 type MagicsJob={id:number;number:string;customer:string;source:string;priority:string;status:string;received_at:string;file_count:number;processed_file_count:number;files:MagicsFile[];latest_session:MagicsSession|null}
 type SessionRow=MagicsSession&{job_id:number;job_number:string;customer:string;job_status:string}
-type Material={id:number;code:string;name:string;density_g_cm3:number|null}
 
 export default function Magics(){
  const[queue,setQueue]=useState<MagicsJob[]>([])
  const[sessions,setSessions]=useState<SessionRow[]>([])
- const[materials,setMaterials]=useState<Material[]>([])
- const[materialId,setMaterialId]=useState('')
  const[operator,setOperator]=useState('Magics Operator')
  const[workstation,setWorkstation]=useState('MAGICS-PC-01')
  const[checker,setChecker]=useState('Senior Checker')
@@ -22,7 +19,7 @@ export default function Magics(){
  const[error,setError]=useState('')
  const[loading,setLoading]=useState(false)
 
- const load=()=>Promise.all([getJson<MagicsJob[]>('/api/magics/queue'),getJson<SessionRow[]>('/api/magics/sessions'),getJson<Material[]>('/api/materials')]).then(([q,s,m])=>{setQueue(q);setSessions(s);setMaterials(m);setMaterialId(current=>current||String(m.find(x=>x.density_g_cm3)?.id||''))})
+ const load=()=>Promise.all([getJson<MagicsJob[]>('/api/magics/queue'),getJson<SessionRow[]>('/api/magics/sessions')]).then(([q,s])=>{setQueue(q);setSessions(s)})
  useEffect(()=>{load().catch(x=>setError(String(x)))},[])
 
  const run=async(action:()=>Promise<unknown>,message:string)=>{
@@ -38,12 +35,10 @@ export default function Magics(){
    await postForm(`/api/jobs/${job.id}/files/${source.id}/magics-processed`,form)
    let message=`${file.name} uploaded as the repaired output.`
    if(file.name.toLowerCase().endsWith('.stl')){
-    const material=materials.find(item=>String(item.id)===materialId)
-    if(!material?.density_g_cm3)message+=' Add a material density in Settings → Materials to calculate its weight.'
-    else try{
-     const result=await calculateStlWeight(file,material.density_g_cm3,file.name)
+    try{
+     const result=await calculateStlWeight(file,file.name)
      await postJson(`/api/job-files/${source.id}/weight`,{weight_g:result.weightG,weight_source:'AUTO_STL'})
-     message+=` Weight calculated and saved automatically: ${result.weightG} g (${result.volumeMm3} mm³) using ${material.name}.`
+     message+=` Weight calculated and saved automatically: ${result.volumeCm3} cm³ × 0.9 = ${result.weightG} g.`
     }catch(weightError){message+=` Weight was not calculated: ${String(weightError)}. The repaired file is saved; you can retry from Weight.`}
    }
    setNotice(message);await load()
@@ -76,7 +71,6 @@ export default function Magics(){
    <label>Operator<input value={operator} onChange={e=>setOperator(e.target.value)}/></label>
    <label>Workstation<input value={workstation} onChange={e=>setWorkstation(e.target.value)}/></label>
    <label>Checker<input value={checker} onChange={e=>setChecker(e.target.value)}/></label>
-   <label>Weight material<select value={materialId} onChange={e=>setMaterialId(e.target.value)}><option value="">Choose material with density</option>{materials.map(m=><option key={m.id} value={m.id}>{m.name} · {m.density_g_cm3?`${m.density_g_cm3} g/cm³`:'density not set'}</option>)}</select></label>
   </div>
 
   {notice&&<div className="successBox">{notice}</div>}

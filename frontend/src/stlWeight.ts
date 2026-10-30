@@ -1,8 +1,8 @@
 import {STLLoader} from 'three/examples/jsm/loaders/STLLoader.js'
 
-/** Estimate solid mesh mass from an STL whose coordinate units are millimetres. */
-export async function calculateStlWeight(blob:Blob,densityGPerCm3:number,fileName='STL file'){
- if(!Number.isFinite(densityGPerCm3)||densityGPerCm3<=0)throw new Error('Set a valid material density first.')
+/** Magics shop formula: mesh volume in cm³ × 0.9 = weight in grams. */
+export const STL_WEIGHT_FACTOR_G_PER_CM3=0.9
+export async function calculateStlWeight(blob:Blob,fileName='STL file'){
  const geometry=new STLLoader().parse(await blob.arrayBuffer())
  try{
   const positions=geometry.getAttribute('position')
@@ -22,8 +22,9 @@ export async function calculateStlWeight(blob:Blob,densityGPerCm3:number,fileNam
   }
   for(const edge of edgeBalance.values())if(edge.count!==2||edge.direction!==0)throw new Error(`${fileName}: mesh is open or has inconsistent triangle directions. Repair it in Easy3D or Magics before calculating weight.`)
   const volumeMm3=Math.abs(sixVolume/6)
-  const weightG=Number((volumeMm3*densityGPerCm3/1000).toFixed(3))
+  const volumeCm3=volumeMm3/1000
+  const weightG=Number((volumeCm3*STL_WEIGHT_FACTOR_G_PER_CM3).toFixed(3))
   if(!Number.isFinite(weightG)||weightG<=0)throw new Error(`${fileName}: no positive volume. Check that the STL is closed and repaired.`)
-  return {weightG,volumeMm3:Number(volumeMm3.toFixed(3))}
+  return {weightG,volumeMm3:Number(volumeMm3.toFixed(3)),volumeCm3:Number(volumeCm3.toFixed(6))}
  }finally{geometry.dispose()}
 }
