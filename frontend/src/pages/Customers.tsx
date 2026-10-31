@@ -3,14 +3,14 @@ import {Download, FileSpreadsheet, Mail, MessageCircle, Plus, RefreshCw, Receipt
 import {getJson, postJson} from '../api'
 import {strFromU8, unzipSync} from 'fflate'
 
-type Customer={id:number;code:string;name:string;email:string|null;whatsapp:string|null;default_rate:number;credit_days:number}
-type ImportCustomer={name:string;email:string|null;whatsapp:string|null;default_rate:number;credit_days:number;gst_number?:string|null}
+type Customer={id:number;code:string;name:string;email:string|null;whatsapp:string|null;default_rate:number;urgent_rate:number;credit_days:number}
+type ImportCustomer={name:string;email:string|null;whatsapp:string|null;default_rate:number;urgent_rate:number;credit_days:number;gst_number?:string|null}
 
 const money=(n:number)=>new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR',maximumFractionDigits:0}).format(n||0)
 
 export default function Customers(){
  const[customers,setCustomers]=useState<Customer[]>([])
- const[form,setForm]=useState({name:'',email:'',whatsapp:'',default_rate:'300',credit_days:'30'})
+ const[form,setForm]=useState({name:'',email:'',whatsapp:'',default_rate:'300',urgent_rate:'300',credit_days:'30'})
  const[query,setQuery]=useState('')
  const[notice,setNotice]=useState('')
  const[error,setError]=useState('')
@@ -24,7 +24,7 @@ export default function Customers(){
  const filtered=useMemo(()=>{
   const term=query.trim().toLowerCase()
   if(!term)return customers
-  return customers.filter(c=>[c.code,c.name,c.email,c.whatsapp,money(c.default_rate),`${c.credit_days}`].some(v=>String(v||'').toLowerCase().includes(term)))
+  return customers.filter(c=>[c.code,c.name,c.email,c.whatsapp,money(c.default_rate),money(c.urgent_rate),`${c.credit_days}`].some(v=>String(v||'').toLowerCase().includes(term)))
  },[customers,query])
 
  const averageRate=customers.length?customers.reduce((sum,c)=>sum+(c.default_rate||0),0)/customers.length:0
@@ -37,10 +37,11 @@ export default function Customers(){
     email:form.email.trim()||null,
     whatsapp:form.whatsapp.trim()||null,
     default_rate:Number(form.default_rate)||0,
+    urgent_rate:Number(form.urgent_rate)||0,
     credit_days:Number(form.credit_days)||0
    })
    setNotice(`${form.name.trim()} customer added.`)
-   setForm({name:'',email:'',whatsapp:'',default_rate:'300',credit_days:'30'})
+   setForm({name:'',email:'',whatsapp:'',default_rate:'300',urgent_rate:'300',credit_days:'30'})
    await load()
    document.getElementById('customer-list')?.scrollIntoView({behavior:'smooth',block:'start'})
   }catch(x){setError(String(x))}
@@ -85,14 +86,14 @@ export default function Customers(){
   {error&&<div className="errorBox">{error}</div>}
 
   <section className="subPanel customerImportPanel" id="import-customers">
-   <div className="panelHead"><div><h2>Import Customers from Excel</h2><p>Upload an .xlsx Excel sheet or .csv file with Customer Name and Rate / g. Email, WhatsApp, credit days, and GST are optional.</p></div></div>
+   <div className="panelHead"><div><h2>Import Customers from Excel</h2><p>Upload an .xlsx Excel sheet or .csv file with customer name and standard/urgent rates. A single rate is used for both; pairs like 200/225 or two consecutive rows for the same customer set standard 200 and urgent 225.</p></div></div>
    <div className="customerImportActions">
     <label className="secondaryBtn customerImportChoose"><Upload size={16}/>{importName||'Choose Excel / CSV'}<input type="file" accept=".xlsx,.csv" disabled={loading} onChange={e=>{const file=e.currentTarget.files?.[0];if(file)void readImportFile(file);e.currentTarget.value=''}}/></label>
     <button className="secondaryBtn" type="button" onClick={downloadTemplate}><Download size={16}/>Download template</button>
     {importRows.length>0&&<button className="primaryBtn" type="button" onClick={()=>void importCustomers()} disabled={loading}><FileSpreadsheet size={16}/>{loading?'Importing…':`Import ${importRows.length} customers`}</button>}
    </div>
-   {importRows.length>0&&<><p className="mutedCell">Preview: first {Math.min(importRows.length,5)} of {importRows.length} rows. Rate / g and credit days default to 0 and 0 when blank.</p><div className="tableScroll"><table><thead><tr><th>Name</th><th>Email</th><th>WhatsApp</th><th>Rate / g</th><th>Credit days</th></tr></thead><tbody>{importRows.slice(0,5).map((row,i)=><tr key={`${row.name}-${i}`}><td>{row.name}</td><td>{row.email||'-'}</td><td>{row.whatsapp||'-'}</td><td>{row.default_rate}</td><td>{row.credit_days}</td></tr>)}</tbody></table></div></>}
-   <small className="mutedCell">Required columns: Customer Name and Rate / g. Optional columns: Email, WhatsApp/Phone, Credit days, and GST number.</small>
+   {importRows.length>0&&<><p className="mutedCell">Preview: first {Math.min(importRows.length,5)} of {importRows.length} rows. Single rates apply to both job priorities.</p><div className="tableScroll"><table><thead><tr><th>Name</th><th>Email</th><th>WhatsApp</th><th>Standard / g</th><th>Urgent / g</th><th>Credit days</th></tr></thead><tbody>{importRows.slice(0,5).map((row,i)=><tr key={`${row.name}-${i}`}><td>{row.name}</td><td>{row.email||'-'}</td><td>{row.whatsapp||'-'}</td><td>{row.default_rate}</td><td>{row.urgent_rate}</td><td>{row.credit_days}</td></tr>)}</tbody></table></div></>}
+   <small className="mutedCell">Required: Customer Name and Standard Rate / g. Optional urgent column: Urgent Rate / g. A single Rate / g or a pair such as 200/225 is also accepted. Repeated customer names with single rates merge in order: first standard, second urgent.</small>
   </section>
 
   <section id="add-customer" className="subPanel">
@@ -101,7 +102,8 @@ export default function Customers(){
     <label>Name<input value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></label>
     <label>Email<input type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/></label>
     <label>WhatsApp<input value={form.whatsapp} onChange={e=>setForm({...form,whatsapp:e.target.value})}/></label>
-    <label>Rate / g<input inputMode="decimal" value={form.default_rate} onChange={e=>setForm({...form,default_rate:e.target.value})}/></label>
+    <label>Standard rate / g<input inputMode="decimal" value={form.default_rate} onChange={e=>setForm({...form,default_rate:e.target.value})}/></label>
+    <label>Urgent rate / g<input inputMode="decimal" value={form.urgent_rate} onChange={e=>setForm({...form,urgent_rate:e.target.value})}/></label>
     <label>Credit days<input inputMode="numeric" value={form.credit_days} onChange={e=>setForm({...form,credit_days:e.target.value})}/></label>
     <button className="primaryBtn" onClick={addCustomer} disabled={loading||!form.name.trim()}><Plus size={16}/>Add Customer</button>
    </div>
@@ -113,10 +115,10 @@ export default function Customers(){
     <label className="customerSearch"><Search size={16}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search customers..." /></label>
    </div>
    <table>
-    <thead><tr><th>Code</th><th>Name</th><th>Email</th><th>WhatsApp</th><th>Rate / g</th><th>Credit</th></tr></thead>
+    <thead><tr><th>Code</th><th>Name</th><th>Email</th><th>WhatsApp</th><th>Standard / g</th><th>Urgent / g</th><th>Credit</th></tr></thead>
     <tbody>
-     {filtered.map(c=><tr key={c.id}><td><b>{c.code}</b></td><td>{c.name}</td><td>{c.email||'-'}</td><td>{c.whatsapp||'-'}</td><td>{money(c.default_rate)}</td><td>{c.credit_days} days</td></tr>)}
-     {!filtered.length&&<tr><td colSpan={6}>No customers found.</td></tr>}
+     {filtered.map(c=><tr key={c.id}><td><b>{c.code}</b></td><td>{c.name}</td><td>{c.email||'-'}</td><td>{c.whatsapp||'-'}</td><td>{money(c.default_rate)}</td><td>{money(c.urgent_rate??c.default_rate)}</td><td>{c.credit_days} days</td></tr>)}
+     {!filtered.length&&<tr><td colSpan={7}>No customers found.</td></tr>}
     </tbody>
    </table>
   </section>
@@ -124,11 +126,11 @@ export default function Customers(){
 }
 
 function downloadTemplate(){
- const csv='Customer Name,Rate / g\r\nExample Customer,150\r\n'
+ const csv='Customer Name,Standard Rate / g,Urgent Rate / g\r\nExample Customer,150,200\r\n'
  const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='customer-name-rate-template.csv';a.click();URL.revokeObjectURL(url)
 }
 function normalizeHeader(value:string){return value.trim().toLowerCase().replace(/[^a-z0-9]+/g,' ').trim()}
-const HEADER_ALIASES:Record<string,string[]>={name:['name','customer','customer name','client name','party name','account name'],email:['email','email address','e mail'],whatsapp:['whatsapp','whatsapp number','phone','phone number','mobile','mobile number','contact','contact number'],default_rate:['rate','rate g','customer rate','rate per g','rate per gram','default rate','default rate g','price per gram'],credit_days:['credit','credit days','payment days','due days'],gst_number:['gst','gst no','gst number','gstin','gst registration number']}
+const HEADER_ALIASES:Record<string,string[]>={name:['name','customer','customer name','client name','party name','account name'],email:['email','email address','e mail'],whatsapp:['whatsapp','whatsapp number','phone','phone number','mobile','mobile number','contact','contact number'],default_rate:['rate','rate g','customer rate','rate per g','rate per gram','default rate','default rate g','price per gram','standard rate','standard rate g','normal rate','normal rate g','regular rate','regular rate g'],urgent_rate:['urgent rate','urgent rate g','express rate','express rate g','priority rate','priority rate g'],credit_days:['credit','credit days','payment days','due days'],gst_number:['gst','gst no','gst number','gstin','gst registration number']}
 function mapCustomerRows(matrix:string[][]):ImportCustomer[]{
  let headerIndex=-1,columns:Record<string,number>={};let best=0
  for(let i=0;i<Math.min(matrix.length,15);i++){
@@ -137,14 +139,23 @@ function mapCustomerRows(matrix:string[][]):ImportCustomer[]{
   if(found.name!==undefined&&Object.keys(found).length>best){headerIndex=i;columns=found;best=Object.keys(found).length}
  }
  if(headerIndex<0)return []
- if(columns.default_rate===undefined)throw new Error('The sheet needs a Rate / g column in addition to Customer Name.')
+ if(columns.default_rate===undefined)throw new Error('The sheet needs a Rate / g or Standard Rate / g column in addition to Customer Name.')
  const cell=(row:string[],key:string)=>columns[key]===undefined?'':String(row[columns[key]]??'').trim()
- return matrix.slice(headerIndex+1).map((row,index)=>{
-  const name=cell(row,'name'),rawRate=cell(row,'default_rate'),rawCredit=cell(row,'credit_days'),rate=toNonnegative(rawRate),credit=toNonnegative(rawCredit)
+ const parsed=matrix.slice(headerIndex+1).map((row,index)=>{
+  const name=cell(row,'name'),rawRate=cell(row,'default_rate'),rawUrgent=cell(row,'urgent_rate'),rawCredit=cell(row,'credit_days'),pair=columns.urgent_rate===undefined?rawRate.split('/').map(value=>value.trim()):[],rate=toNonnegative(pair.length===2?pair[0]:rawRate),urgentRate=toNonnegative(rawUrgent|| (pair.length===2?pair[1]:rawRate)),credit=toNonnegative(rawCredit)
   if(name&&!rawRate)throw new Error(`Row ${headerIndex+index+2}: Rate / g is required.`)
-  if(Number.isNaN(rate)||Number.isNaN(credit))throw new Error(`Row ${headerIndex+index+2}: Rate / g and Credit days must be nonnegative numbers.`)
-  return {name,email:cell(row,'email')||null,whatsapp:cell(row,'whatsapp')||null,default_rate:rate,credit_days:Math.floor(credit),gst_number:cell(row,'gst_number')||null}
+  if(Number.isNaN(rate)||Number.isNaN(urgentRate)||Number.isNaN(credit))throw new Error(`Row ${headerIndex+index+2}: Standard rate, urgent rate, and credit days must be nonnegative numbers.`)
+  return {name,email:cell(row,'email')||null,whatsapp:cell(row,'whatsapp')||null,default_rate:rate,urgent_rate:urgentRate,credit_days:Math.floor(credit),gst_number:cell(row,'gst_number')||null}
  }).filter(row=>row.name)
+ const grouped:ImportCustomer[]=[];const byIdentity=new Map<string,ImportCustomer>()
+ for(const row of parsed){
+  const identity=row.email?`email:${row.email.toLowerCase()}`:row.whatsapp?`phone:${row.whatsapp.replace(/\D/g,'')}`:`name:${row.name.trim().toLowerCase()}`
+  const existing=byIdentity.get(identity)
+  if(!existing){byIdentity.set(identity,row);grouped.push(row);continue}
+  if(existing.default_rate!==existing.urgent_rate||row.default_rate!==row.urgent_rate)throw new Error(`Customer ${row.name} is repeated with a rate pair more than once. Keep one row with Standard/Urgent Rate columns or a value such as 200/225.`)
+  existing.urgent_rate=row.default_rate
+ }
+ return grouped
 }
 function toNonnegative(value:string){if(!value)return 0;const n=Number(value.replace(/[₹,\s]/g,''));return Number.isFinite(n)&&n>=0?n:NaN}
 function parseCsv(source:string):string[][]{

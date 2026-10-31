@@ -24,12 +24,14 @@ export default function Inbox(){
  const[customers,setCustomers]=useState<Customer[]>([])
  const[selectedMessage,setSelectedMessage]=useState<InboxMessage|null>(null)
  const[selectedCustomer,setSelectedCustomer]=useState('')
+ const[selectedPriority,setSelectedPriority]=useState<'NORMAL'|'URGENT'>('NORMAL')
  const[showManualUpload,setShowManualUpload]=useState(false)
  const[manualFiles,setManualFiles]=useState<File[]>([])
  const[manualCustomer,setManualCustomer]=useState('')
  const[manualSender,setManualSender]=useState('')
  const[manualMessage,setManualMessage]=useState('')
  const[manualSource,setManualSource]=useState<'whatsapp'|'manual'>('whatsapp')
+ const[manualPriority,setManualPriority]=useState<'NORMAL'|'URGENT'>('NORMAL')
  const autoFetchStarted=useRef(false)
 
  const load=async()=>{
@@ -85,6 +87,7 @@ export default function Inbox(){
    const rows=await getJson<Customer[]>('/api/customers')
    setCustomers(rows)
    setSelectedCustomer(message.customer_id?String(message.customer_id):'')
+   setSelectedPriority('NORMAL')
    setSelectedMessage(message)
   }catch(x){setError(String(x))}
  }
@@ -108,16 +111,17 @@ export default function Inbox(){
     const extracted=expanded.flatMap(item=>item.files)
     const form=new FormData()
     form.append('customer_id',String(Number(selectedCustomer)))
+    form.append('priority',selectedPriority)
     form.append('expanded_archives',JSON.stringify(expanded.map(item=>item.attachmentId)))
     form.append('expanded_files',JSON.stringify(extracted.map(file=>({name:file.name,archive_id:file.archiveId}))))
     extracted.forEach(file=>form.append('expanded_file',file.file,file.name))
     setNotice(`Extracted ${extracted.length} STL/CAM file(s). Creating the job...`)
     result=await postForm<{job_number:string;files:number}>(`/api/inbox/${selectedMessage.id}/create-job-from-rar`,form)
    }else{
-    result=await postJson<{job_number:string;files:number}>(`/api/inbox/${selectedMessage.id}/create-job`,{customer_id:Number(selectedCustomer)})
+    result=await postJson<{job_number:string;files:number}>(`/api/inbox/${selectedMessage.id}/create-job`,{customer_id:Number(selectedCustomer),priority:selectedPriority})
    }
    setNotice(`${result.job_number} created with ${result.files} file(s) and sent to the Magics queue.`)
-   setSelectedMessage(null);setSelectedCustomer('')
+   setSelectedMessage(null);setSelectedCustomer('');setSelectedPriority('NORMAL')
    await load()
   }catch(x){setError(String(x))}
   finally{setLoading(false)}
@@ -151,11 +155,12 @@ export default function Inbox(){
    form.append('source',manualSource)
    form.append('sender',manualSender)
    form.append('message',manualMessage)
+   form.append('priority',manualPriority)
    entries.forEach(file=>form.append('upload',file,file.name))
    setNotice(`Uploading ${entries.length} file(s) and creating the job...`)
    const result=await postForm<{job_number:string;files:number}>('/api/inbox/manual-upload-job',form)
    setNotice(`${result.job_number} created with ${result.files} file(s) and sent to the Magics queue.`)
-   setShowManualUpload(false);setManualFiles([]);setManualCustomer('');setManualSender('');setManualMessage('');setManualSource('whatsapp')
+   setShowManualUpload(false);setManualFiles([]);setManualCustomer('');setManualSender('');setManualMessage('');setManualSource('whatsapp');setManualPriority('NORMAL')
    await load()
   }catch(x){setError(String(x))}
   finally{setLoading(false)}
@@ -211,6 +216,7 @@ export default function Inbox(){
    <div><h3>Upload files and create a job</h3><p>Select files saved from WhatsApp or your computer. RAR and ZIP archives are opened and their contents are added as individual job files.</p></div>
    <label>Customer<select value={manualCustomer} onChange={e=>setManualCustomer(e.target.value)} required><option value="">Choose a customer</option>{customers.map(customer=><option key={customer.id} value={customer.id}>{customer.name}{customer.whatsapp?` · ${customer.whatsapp}`:''}</option>)}</select></label>
    <label>File source<select value={manualSource} onChange={e=>setManualSource(e.target.value as 'whatsapp'|'manual')}><option value="whatsapp">WhatsApp</option><option value="manual">Manual / other</option></select></label>
+   <label>Job priority<select value={manualPriority} onChange={e=>setManualPriority(e.target.value as 'NORMAL'|'URGENT')}><option value="NORMAL">Standard rate</option><option value="URGENT">Urgent rate</option></select></label>
    <label className="manualFilePicker">Choose files<input type="file" multiple onChange={e=>setManualFiles(Array.from(e.target.files||[]))}/></label>
    <label>Sender name / WhatsApp number<input value={manualSender} onChange={e=>setManualSender(e.target.value)} placeholder="Optional"/></label>
    <label className="manualMessageField">Job notes<textarea value={manualMessage} onChange={e=>setManualMessage(e.target.value)} rows={2} placeholder="Optional production instructions"/></label>
@@ -230,6 +236,7 @@ export default function Inbox(){
   {selectedMessage&&<div className="inboxJobCreator">
    <div><h3>Create a job from this email</h3><p><b>{selectedMessage.subject||'(no subject)'}</b> · {selectedMessage.attachments.length} saved file(s){selectedMessage.attachments.some(file=>file.filename.toLowerCase().endsWith('.rar'))&&' · RAR archives will be opened and each STL/CAM added separately'}</p></div>
    <label>Customer<select value={selectedCustomer} onChange={e=>setSelectedCustomer(e.target.value)}><option value="">Choose a customer</option>{customers.map(customer=><option key={customer.id} value={customer.id}>{customer.name}{customer.email?` · ${customer.email}`:''}</option>)}</select></label>
+   <label>Job priority<select value={selectedPriority} onChange={e=>setSelectedPriority(e.target.value as 'NORMAL'|'URGENT')}><option value="NORMAL">Standard rate</option><option value="URGENT">Urgent rate</option></select></label>
    {!customers.length&&<small className="mutedCell">Add the customer in Customers first, then create this job.</small>}
    <div className="inboxJobActions"><button className="primaryBtn" type="button" onClick={createJob} disabled={loading||!selectedCustomer}><BriefcaseBusiness size={15}/>{loading?'Creating...':'Create Job'}</button><button className="secondaryBtn" type="button" onClick={()=>setSelectedMessage(null)} disabled={loading}><X size={15}/>Cancel</button></div>
   </div>}

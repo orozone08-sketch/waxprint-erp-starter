@@ -5,7 +5,7 @@ import {Job} from '../types'
 import {jumpTo} from '../ui'
 import {calculateStlWeight} from '../stlWeight'
 
-type Customer={id:number;code:string;name:string;email:string|null;whatsapp:string|null;default_rate:number;credit_days:number}
+type Customer={id:number;code:string;name:string;email:string|null;whatsapp:string|null;default_rate:number;urgent_rate:number;credit_days:number}
 type JobFile={id:number;name:string;download_url:string;quantity:number;weight_g:number|null;weight_source:string|null;weight_recorded_at:string|null}
 type JobDetail={job:Job;files:JobFile[]}
 type WeightSource='MAGICS'|'EASY3D'|'MANUAL'|'AUTO_STL'
@@ -39,7 +39,7 @@ export default function Weight({role}:{role:string}){
  const missing=active.reduce((sum,d)=>sum+d.files.filter(f=>!f.weight_g||f.weight_g<=0).length,0)
  const complete=active.filter(d=>d.files.length>0&&d.files.every(f=>!!f.weight_g&&f.weight_g>0))
  const billableTotal=complete.reduce((sum,d)=>sum+d.files.reduce((n,f)=>n+(f.weight_g||0)*f.quantity,0),0)
- const revenueTotal=canSeeFinancial?complete.reduce((sum,d)=>sum+d.files.reduce((n,f)=>n+(f.weight_g||0)*f.quantity,0)*(customerById[d.job.customer_id]?.default_rate||0),0):0
+ const revenueTotal=canSeeFinancial?complete.reduce((sum,d)=>sum+d.files.reduce((n,f)=>n+(f.weight_g||0)*f.quantity,0)*(d.job.priority==='URGENT'?(customerById[d.job.customer_id]?.urgent_rate??customerById[d.job.customer_id]?.default_rate??0):(customerById[d.job.customer_id]?.default_rate||0)),0):0
 
  const saveFileWeight=async(file:JobFile,job:Job)=>{
   const value=Number(weights[file.id])
@@ -137,7 +137,7 @@ export default function Weight({role}:{role:string}){
         </div>
        })}
       </div>
-      <div className="weightPreview"><span>Calculated total <b>{round(total)}g</b></span><span>Quantity included <b>{files.reduce((sum,f)=>sum+f.quantity,0)}</b></span>{canSeeFinancial&&<span>Bill preview <b>{money(total*(customer?.default_rate||0))}</b></span>}</div>
+      <div className="weightPreview"><span>Calculated total <b>{round(total)}g</b></span><span>Quantity included <b>{files.reduce((sum,f)=>sum+f.quantity,0)}</b></span>{canSeeFinancial&&<span>Bill preview ({job.priority==='URGENT'?'urgent':'standard'} rate) <b>{money(total*(job.priority==='URGENT'?(customer?.urgent_rate??customer?.default_rate??0):(customer?.default_rate||0)))}</b></span>}</div>
      </article>
     })}
    </div>

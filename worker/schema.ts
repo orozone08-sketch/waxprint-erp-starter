@@ -67,6 +67,10 @@ export const schema = {
       "type": "number",
       "nullable": false
     },
+    "urgent_rate": {
+      "type": "number",
+      "nullable": false
+    },
     "credit_days": {
       "type": "number",
       "nullable": false

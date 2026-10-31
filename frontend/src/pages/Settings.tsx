@@ -2,7 +2,7 @@ import {type FormEvent, type ReactNode, type Ref, type RefObject, useEffect, use
 import {Boxes, CheckCircle2, Mail, Plus, Printer, RefreshCw, Save, Store, Trash2, Users, Wrench} from 'lucide-react'
 import {getJson, postJson} from '../api'
 
-type Customer={id:number;code:string;name:string;email:string|null;whatsapp:string|null;default_rate:number;credit_days:number}
+type Customer={id:number;code:string;name:string;email:string|null;whatsapp:string|null;default_rate:number;urgent_rate:number;credit_days:number}
 type Supplier={id:number;code:string;name:string;gst_number:string|null;contact:string|null}
 type Machine={id:number;code:string;name:string;model:string|null;serial_number:string|null;status:string}
 type Material={id:number;code:string;name:string;unit:string;stock:number;minimum_stock:number;density_g_cm3:number|null}
@@ -19,7 +19,7 @@ export default function SettingsPage(){
  const[materials,setMaterials]=useState<Material[]>([])
  const[densities,setDensities]=useState<Record<number,string>>({})
  const[integrations,setIntegrations]=useState<Integrations|null>(null)
- const[customer,setCustomer]=useState({name:'',email:'',whatsapp:'',default_rate:'300',credit_days:'30'})
+ const[customer,setCustomer]=useState({name:'',email:'',whatsapp:'',default_rate:'300',urgent_rate:'300',credit_days:'30'})
  const[supplier,setSupplier]=useState({code:'',name:'',gst_number:'',contact:''})
  const[machine,setMachine]=useState({code:'',name:'',model:'',serial_number:'',status:'AVAILABLE'})
  const[material,setMaterial]=useState({code:'',name:'',unit:'kit',minimum_stock:'1'})
@@ -61,7 +61,7 @@ export default function SettingsPage(){
   finally{setLoading(false)}
  }
 
- const addCustomer=()=>run(()=>postJson('/api/customers',{name:customer.name,email:customer.email||null,whatsapp:customer.whatsapp||null,default_rate:Number(customer.default_rate)||0,credit_days:Number(customer.credit_days)||0}),`${customer.name} customer added.`).then(()=>setCustomer({name:'',email:'',whatsapp:'',default_rate:'300',credit_days:'30'}))
+ const addCustomer=()=>run(()=>postJson('/api/customers',{name:customer.name,email:customer.email||null,whatsapp:customer.whatsapp||null,default_rate:Number(customer.default_rate)||0,urgent_rate:Number(customer.urgent_rate)||0,credit_days:Number(customer.credit_days)||0}),`${customer.name} customer added.`).then(()=>setCustomer({name:'',email:'',whatsapp:'',default_rate:'300',urgent_rate:'300',credit_days:'30'}))
  const addSupplier=()=>run(()=>postJson('/api/suppliers',{code:supplier.code,name:supplier.name,gst_number:supplier.gst_number||null,contact:supplier.contact||null}),`${supplier.name} supplier added.`).then(()=>setSupplier({code:'',name:'',gst_number:'',contact:''}))
  const addMachine=()=>run(()=>postJson('/api/machines',{code:machine.code,name:machine.name,model:machine.model||null,serial_number:machine.serial_number||null,status:machine.status}),`${machine.name} machine added.`).then(()=>setMachine({code:'',name:'',model:'',serial_number:'',status:'AVAILABLE'}))
  const addMaterial=()=>run(()=>postJson('/api/materials',{code:material.code,name:material.name,unit:material.unit,minimum_stock:Number(material.minimum_stock)||0}),`${material.name} material added.`).then(()=>setMaterial({code:'',name:'',unit:'kit',minimum_stock:'1'}))
@@ -175,11 +175,12 @@ export default function SettingsPage(){
      <label>Name<input value={customer.name} onChange={e=>setCustomer({...customer,name:e.target.value})}/></label>
      <label>Email<input value={customer.email} onChange={e=>setCustomer({...customer,email:e.target.value})}/></label>
      <label>WhatsApp<input value={customer.whatsapp} onChange={e=>setCustomer({...customer,whatsapp:e.target.value})}/></label>
-     <label>Rate / g<input inputMode="decimal" value={customer.default_rate} onChange={e=>setCustomer({...customer,default_rate:e.target.value})}/></label>
+     <label>Standard rate / g<input inputMode="decimal" value={customer.default_rate} onChange={e=>setCustomer({...customer,default_rate:e.target.value})}/></label>
+     <label>Urgent rate / g<input inputMode="decimal" value={customer.urgent_rate} onChange={e=>setCustomer({...customer,urgent_rate:e.target.value})}/></label>
      <label>Credit days<input inputMode="numeric" value={customer.credit_days} onChange={e=>setCustomer({...customer,credit_days:e.target.value})}/></label>
      <button className="primaryBtn" onClick={addCustomer} disabled={loading||!customer.name}><Plus size={16}/>Add Customer</button>
     </div>
-    <MiniTable rows={customers.slice(0,6).map(c=>[c.code,c.name,money(c.default_rate)+'/g',`${c.credit_days} days`])}/>
+    <MiniTable rows={customers.slice(0,6).map(c=>[c.code,c.name,`${money(c.default_rate)} standard · ${money(c.urgent_rate??c.default_rate)} urgent /g`,`${c.credit_days} days`])}/>
    </MasterPanel>
 
    <MasterPanel panelRef={suppliersRef} active={highlight==='suppliers'} icon={<Store size={18}/>} title="Suppliers">

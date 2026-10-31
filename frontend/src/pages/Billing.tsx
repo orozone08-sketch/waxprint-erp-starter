@@ -4,7 +4,7 @@ import {getJson, postJson} from '../api'
 import {Job} from '../types'
 import {jumpTo} from '../ui'
 
-type Customer={id:number;code:string;name:string;email:string|null;whatsapp:string|null;default_rate:number;credit_days:number}
+type Customer={id:number;code:string;name:string;email:string|null;whatsapp:string|null;default_rate:number;urgent_rate:number;credit_days:number}
 type Invoice={id:number;number:string;customer_id:number;date:string;subtotal:number;tax:number;total:number;paid:number;outstanding:number;status:string}
 type Draft={taxRate:string;extraCharge:string;extraDescription:string}
 
@@ -92,10 +92,10 @@ export default function Billing(){
   <section className="subPanel" id="create-invoice">
    <div className="panelHead"><h2>Create Invoice</h2><small>{readyJobs.length} job(s)</small></div>
    <div className="billingCards">
-    {readyJobs.map(job=>{const customer=customerById[job.customer_id];const draft=drafts[job.id]||{taxRate:'0',extraCharge:'0',extraDescription:'Other Charges'};const base=job.billable_weight_g*(customer?.default_rate||0);const extra=Number(draft.extraCharge)||0;const subtotal=base+extra;const tax=subtotal*(Number(draft.taxRate)||0)/100;return <article className="billingCard" key={job.id}>
+    {readyJobs.map(job=>{const customer=customerById[job.customer_id];const rate=job.priority==='URGENT'?(customer?.urgent_rate??customer?.default_rate??0):(customer?.default_rate||0);const draft=drafts[job.id]||{taxRate:'0',extraCharge:'0',extraDescription:'Other Charges'};const base=job.billable_weight_g*rate;const extra=Number(draft.extraCharge)||0;const subtotal=base+extra;const tax=subtotal*(Number(draft.taxRate)||0)/100;return <article className="billingCard" key={job.id}>
      <div className="billingJob">
       <small>{job.number}</small><h3>{job.customer}</h3>
-      <span>{job.billable_weight_g}g x {money(customer?.default_rate||0)}/g / {pretty(job.status)}</span>
+      <span>{job.billable_weight_g}g x {money(rate)}/g · {job.priority==='URGENT'?'Urgent':'Standard'} rate / {pretty(job.status)}</span>
      </div>
      <div className="billingInputs">
       <label>Tax %<input inputMode="decimal" value={draft.taxRate} onChange={e=>updateDraft(job.id,{taxRate:e.target.value})}/></label>

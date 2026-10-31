@@ -44,7 +44,7 @@ async function download(c: C, key: string, name: string) {
 
 export function registerProduction(app: Hono<Env>) {
   app.get('/api/jobs', async c => { const status = c.req.query('status'); return c.json(await all(c, `SELECT j.id,j.number,c.name customer,j.customer_id,j.source,j.status,j.priority,j.billable_weight_g,j.reshoot_weight_g,j.received_at,(SELECT COUNT(*) FROM job_files f WHERE f.job_id=j.id) file_count,(SELECT COUNT(*) FROM job_files f WHERE f.job_id=j.id AND (f.weight_g IS NULL OR f.weight_g<=0)) missing_file_weight_count FROM jobs j JOIN customers c ON c.id=j.customer_id ${status ? 'WHERE j.status=?' : ''} ORDER BY j.id DESC`, ...(status ? [status] : []))) })
-  app.post('/api/jobs', async c => { const b = await body(c); await get(c, 'customers', b.customer_id, 'Customer'); const j = await insert(c, 'jobs', { number: code('WJ'), customer_id: b.customer_id, source: b.source ?? 'manual', priority: b.priority ?? 'NORMAL', instructions: b.instructions ?? null }); return c.json({ id: j.id, number: j.number, status: j.status }) })
+  app.post('/api/jobs', async c => { const b = await body(c); await get(c, 'customers', b.customer_id, 'Customer'); const priority=b.priority??'NORMAL';if(!['NORMAL','URGENT'].includes(priority))fail(422,'priority must be NORMAL or URGENT');const j = await insert(c, 'jobs', { number: code('WJ'), customer_id: b.customer_id, source: b.source ?? 'manual', priority, instructions: b.instructions ?? null }); return c.json({ id: j.id, number: j.number, status: j.status }) })
   app.delete('/api/jobs/:job_id', async c => {
     requireRoles(c, 'ADMIN')
     const job = await get(c, 'jobs', c.req.param('job_id'), 'Job')
@@ -247,10 +247,11 @@ export function registerProduction(app: Hono<Env>) {
       return c.json({ job_id: existing.id, job_number: existing.number, status: existing.status, already_created: true })
     }
     const customer = await get(c, 'customers', b.customer_id, 'Customer')
+    const priority=b.priority??'NORMAL';if(!['NORMAL','URGENT'].includes(priority))fail(422,'priority must be NORMAL or URGENT')
     const attachments = await all(c, 'SELECT id,filename,mime_type,size_bytes,sha256,storage_key FROM inbox_attachments WHERE inbox_message_id=? ORDER BY id', inbox.id)
     if (!attachments.length) fail(409, 'This email has no files saved in the ERP yet. Fetch its attachments first.')
     const number = code('WJ')
-    const statements = [add(c, 'jobs', { number, customer_id: customer.id, source: inbox.source || 'gmail', status: 'WAITING_MAGICS', priority: 'NORMAL', instructions: inbox.subject || null })]
+    const statements = [add(c, 'jobs', { number, customer_id: customer.id, source: inbox.source || 'gmail', status: 'WAITING_MAGICS', priority, instructions: inbox.subject || null })]
     for (const attachment of attachments) {
       statements.push(stmt(c, 'INSERT INTO job_files (job_id,file_uid,original_name,original_path,sha256,quantity,status) SELECT id,?,?,?,?,1,? FROM jobs WHERE number=?', code('F'), attachment.filename, attachment.storage_key, attachment.sha256, 'RECEIVED', number))
     }
@@ -269,6 +270,7 @@ export function registerProduction(app: Hono<Env>) {
     }
     const customerId = integer(form.get('customer_id'), 'Customer id')
     const customer = await get(c, 'customers', customerId, 'Customer')
+    const priority=String(form.get('priority')||'NORMAL');if(!['NORMAL','URGENT'].includes(priority))fail(422,'priority must be NORMAL or URGENT')
     const attachments = await all(c, 'SELECT id,filename,mime_type,size_bytes,sha256,storage_key FROM inbox_attachments WHERE inbox_message_id=? ORDER BY id', inbox.id)
     if (!attachments.length) fail(409, 'This email has no files saved in the ERP yet. Fetch its attachments first.')
     const rarAttachments = attachments.filter((file: Row) => String(file.filename).toLowerCase().endsWith('.rar'))
@@ -304,7 +306,7 @@ export function registerProduction(app: Hono<Env>) {
         extracted.push(file)
       }
       const directAttachments = attachments.filter((file: Row) => !String(file.filename).toLowerCase().endsWith('.rar'))
-      const statements = [add(c, 'jobs', { number, customer_id: customer.id, source: inbox.source || 'gmail', status: 'WAITING_MAGICS', priority: 'NORMAL', instructions: inbox.subject || null })]
+      const statements = [add(c, 'jobs', { number, customer_id: customer.id, source: inbox.source || 'gmail', status: 'WAITING_MAGICS', priority, instructions: inbox.subject || null })]
       for (const attachment of directAttachments) {
         statements.push(stmt(c, 'INSERT INTO job_files (job_id,file_uid,original_name,original_path,sha256,quantity,status) SELECT id,?,?,?,?,1,? FROM jobs WHERE number=?', code('F'), attachment.filename, attachment.storage_key, attachment.sha256, 'RECEIVED', number))
       }
@@ -321,14 +323,15 @@ export function registerProduction(app: Hono<Env>) {
     return c.json({ job_id: job.id, job_number: job.number, status: job.status, files: attachments.filter((file: Row) => !String(file.filename).toLowerCase().endsWith('.rar')).length + metadata.length, extracted_files: metadata.length })
   })
   app.post('/api/inbox/manual-upload', async c => {
-    const b = await c.req.parseBody(); const customer = await get(c, 'customers', b.customer_id, 'Customer'); const quantity = integer(b.quantity ?? 1, 'Quantity'); const source = typeof b.source === 'string' ? b.source : 'whatsapp'; const number = code('WJ'); const uid = code('F'); const f = await store(c, b.upload, { number }, 'original')
-    try { const result = await database(c).batch([add(c, 'jobs', { number, customer_id: customer.id, source, status: 'WAITING_MAGICS' }), stmt(c, 'INSERT INTO inbox_messages (source,sender,subject,body,customer_id,job_id,archived,status) SELECT ?,?,?,?,?,id,1,? FROM jobs WHERE number=?', source, b.sender || customer.whatsapp || customer.email || '', `${source} file intake`, b.message || '', customer.id, 'IMPORTED', number), stmt(c, 'INSERT INTO job_files (job_id,file_uid,original_name,original_path,sha256,quantity,status) SELECT id,?,?,?,?,?,? FROM jobs WHERE number=?', uid, f.name, f.key, f.digest, quantity, 'RECEIVED', number)]); return c.json({ job_id: result[0].meta.last_row_id, job_number: number, file_id: uid, archived: true }) } catch (e) { await files(c).delete(f.key); throw e }
+    const b = await c.req.parseBody(); const customer = await get(c, 'customers', b.customer_id, 'Customer'); const quantity = integer(b.quantity ?? 1, 'Quantity'); const source = typeof b.source === 'string' ? b.source : 'whatsapp'; const priority=typeof b.priority==='string'?b.priority:'NORMAL';if(!['NORMAL','URGENT'].includes(priority))fail(422,'priority must be NORMAL or URGENT');const number = code('WJ'); const uid = code('F'); const f = await store(c, b.upload, { number }, 'original')
+    try { const result = await database(c).batch([add(c, 'jobs', { number, customer_id: customer.id, source, status: 'WAITING_MAGICS', priority }), stmt(c, 'INSERT INTO inbox_messages (source,sender,subject,body,customer_id,job_id,archived,status) SELECT ?,?,?,?,?,id,1,? FROM jobs WHERE number=?', source, b.sender || customer.whatsapp || customer.email || '', `${source} file intake`, b.message || '', customer.id, 'IMPORTED', number), stmt(c, 'INSERT INTO job_files (job_id,file_uid,original_name,original_path,sha256,quantity,status) SELECT id,?,?,?,?,?,? FROM jobs WHERE number=?', uid, f.name, f.key, f.digest, quantity, 'RECEIVED', number)]); return c.json({ job_id: result[0].meta.last_row_id, job_number: number, file_id: uid, archived: true }) } catch (e) { await files(c).delete(f.key); throw e }
   })
   app.post('/api/inbox/manual-upload-job', async c => {
     const form = await c.req.formData()
     const customer = await get(c, 'customers', form.get('customer_id'), 'Customer')
     const sourceValue = String(form.get('source') || 'whatsapp')
     if (!['whatsapp', 'manual'].includes(sourceValue)) fail(422, 'Source must be WhatsApp or manual upload')
+    const priority=String(form.get('priority')||'NORMAL');if(!['NORMAL','URGENT'].includes(priority))fail(422,'priority must be NORMAL or URGENT')
     const sender = String(form.get('sender') || '').trim().slice(0, 180) || (sourceValue === 'whatsapp' ? customer.whatsapp : null) || customer.email || customer.name
     const message = String(form.get('message') || '').trim().slice(0, 4000)
     const uploads = form.getAll('upload').filter((entry): entry is File => entry instanceof File && entry.size > 0)
@@ -344,7 +347,7 @@ export function registerProduction(app: Hono<Env>) {
     const stored: Array<{key:string;name:string;digest:string;size:number;mime:string}> = []
     try {
       for (const upload of uploads) stored.push({...await store(c, upload, {number}, 'original'), mime:upload.type || 'application/octet-stream'})
-      const statements = [add(c, 'jobs', {number, customer_id:customer.id, source:sourceValue, status:'WAITING_MAGICS', priority:'NORMAL', instructions:message || null})]
+      const statements = [add(c, 'jobs', {number, customer_id:customer.id, source:sourceValue, status:'WAITING_MAGICS', priority, instructions:message || null})]
       statements.push(stmt(c, `INSERT INTO inbox_messages (source,sender,subject,body,customer_id,job_id,archived,status,attachments_archived)
         SELECT ?,?,?,?, ?,id,1,'IMPORTED',1 FROM jobs WHERE number=?`, sourceValue, sender, 'File upload', message, customer.id, number))
       for (const file of stored) {
