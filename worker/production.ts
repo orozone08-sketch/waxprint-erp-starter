@@ -53,6 +53,12 @@ export function registerProduction(app: Hono<Env>) {
     const platformRows = fileIds.length ? await all(c, 'SELECT DISTINCT platform_id FROM platform_files WHERE job_file_id IN (SELECT id FROM job_files WHERE job_id=?)', job.id) as Row[] : []
     const platformIds = platformRows.map((platform: Row) => Number(platform.platform_id))
     const dispatches = await all(c, 'SELECT packing_photo_path FROM dispatches WHERE job_id=?', job.id) as Row[]
+    const linkedInvoices = await all(c, `SELECT i.id,
+      SUM(CASE WHEN il.job_id=? THEN 1 ELSE 0 END) linked_lines,
+      COUNT(il.id) total_lines
+      FROM invoices i JOIN invoice_lines il ON il.invoice_id=i.id
+      WHERE i.id IN (SELECT invoice_id FROM invoice_lines WHERE job_id=?) GROUP BY i.id`, job.id, job.id) as Row[]
+    const invoicesToDelete = linkedInvoices.filter((invoice: Row) => Number(invoice.linked_lines) === Number(invoice.total_lines)).map((invoice: Row) => Number(invoice.id))
     const storedKeys = [
       ...jobFiles.flatMap((file: Row) => [file.original_path,file.processed_path]),
       ...dispatches.map((dispatch: Row) => dispatch.packing_photo_path),
@@ -60,6 +66,11 @@ export function registerProduction(app: Hono<Env>) {
     const bucket = storedKeys.length ? files(c) : null
     const statements = [
       stmt(c, 'UPDATE inbox_messages SET job_id=NULL WHERE job_id=?', job.id),
+      ...(invoicesToDelete.length ? [
+        stmt(c, `DELETE FROM payments WHERE invoice_id IN (${invoicesToDelete.map(() => '?').join(',')})`, ...invoicesToDelete),
+        stmt(c, `DELETE FROM invoice_lines WHERE invoice_id IN (${invoicesToDelete.map(() => '?').join(',')})`, ...invoicesToDelete),
+        stmt(c, `DELETE FROM invoices WHERE id IN (${invoicesToDelete.map(() => '?').join(',')})`, ...invoicesToDelete),
+      ] : []),
       stmt(c, 'UPDATE invoice_lines SET job_id=NULL WHERE job_id=?', job.id),
       stmt(c, "UPDATE expenses SET related_id=NULL WHERE related_type='JOB' AND related_id=?", job.id),
       stmt(c, 'UPDATE employee_advances SET job_id=NULL WHERE job_id=?', job.id),

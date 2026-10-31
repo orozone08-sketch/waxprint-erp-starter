@@ -86,6 +86,65 @@ app.get('/api/admin/all-data', async c => {
   }
   return c.json({total_records: datasets.reduce((sum, d) => sum + d.count, 0), datasets});
 });
+app.delete('/api/admin/data/:table/:record_id', async c => {
+  requireRoles(c, 'ADMIN');
+  const table = c.req.param('table');
+  const recordId = Number(c.req.param('record_id'));
+  const protectedTables = new Set(['app_users', 'audit_logs']);
+  if (!Object.hasOwn(schema, table) || protectedTables.has(table)) return c.json({detail: 'This admin data entry cannot be deleted here'}, 400);
+  if (!Number.isSafeInteger(recordId) || recordId <= 0) return c.json({detail: 'A valid record id is required'}, 400);
+  const db = database(c);
+  const found = await db.prepare(`SELECT id FROM "${table}" WHERE id=?`).bind(recordId).first();
+  if (!found) return c.json({detail: 'Record not found'}, 404);
+
+  try {
+    if (table === 'invoices') {
+      await db.batch([
+        db.prepare('DELETE FROM payments WHERE invoice_id=?').bind(recordId),
+        db.prepare('DELETE FROM invoice_lines WHERE invoice_id=?').bind(recordId),
+        db.prepare('DELETE FROM invoices WHERE id=?').bind(recordId),
+      ]);
+    } else if (table === 'invoice_lines') {
+      const line = await db.prepare('SELECT invoice_id FROM invoice_lines WHERE id=?').bind(recordId).first<{invoice_id:number}>();
+      await db.batch([
+        db.prepare('DELETE FROM invoice_lines WHERE id=?').bind(recordId),
+        db.prepare(`UPDATE invoices SET
+          subtotal=COALESCE((SELECT SUM(amount) FROM invoice_lines WHERE invoice_id=?),0),
+          tax_amount=CASE WHEN subtotal>0 THEN tax_amount*COALESCE((SELECT SUM(amount) FROM invoice_lines WHERE invoice_id=?),0)/subtotal ELSE 0 END,
+          total_amount=COALESCE((SELECT SUM(amount) FROM invoice_lines WHERE invoice_id=?),0)+CASE WHEN subtotal>0 THEN tax_amount*COALESCE((SELECT SUM(amount) FROM invoice_lines WHERE invoice_id=?),0)/subtotal ELSE 0 END
+          WHERE id=?`).bind(line?.invoice_id,line?.invoice_id,line?.invoice_id,line?.invoice_id,line?.invoice_id),
+      ]);
+    } else if (table === 'payments') {
+      const payment = await db.prepare('SELECT invoice_id FROM payments WHERE id=?').bind(recordId).first<{invoice_id:number}>();
+      await db.batch([
+        db.prepare('DELETE FROM payments WHERE id=?').bind(recordId),
+        db.prepare(`UPDATE invoices SET status=CASE
+          WHEN (SELECT COALESCE(SUM(amount),0) FROM payments WHERE invoice_id=?)>=total_amount THEN 'PAID'
+          WHEN (SELECT COALESCE(SUM(amount),0) FROM payments WHERE invoice_id=?)>0 THEN 'PART_PAID'
+          ELSE 'SENT' END WHERE id=?`).bind(payment?.invoice_id,payment?.invoice_id,payment?.invoice_id),
+      ]);
+    } else if (table === 'inbox_messages') {
+      const attachments = await db.prepare('SELECT storage_key FROM inbox_attachments WHERE inbox_message_id=?').bind(recordId).all<{storage_key:string}>();
+      await db.batch([
+        db.prepare('DELETE FROM inbox_attachments WHERE inbox_message_id=?').bind(recordId),
+        db.prepare('DELETE FROM inbox_messages WHERE id=?').bind(recordId),
+      ]);
+      if (c.env.FILES) await Promise.allSettled((attachments.results||[]).map(item=>c.env.FILES!.delete(item.storage_key)));
+    } else if (table === 'inbox_attachments') {
+      const attachment = await db.prepare('SELECT storage_key FROM inbox_attachments WHERE id=?').bind(recordId).first<{storage_key:string}>();
+      await db.prepare('DELETE FROM inbox_attachments WHERE id=?').bind(recordId).run();
+      if (attachment?.storage_key && c.env.FILES) await c.env.FILES.delete(attachment.storage_key);
+    } else if (table === 'job_files') {
+      return c.json({detail: 'Delete the parent job from the Jobs module to remove this file and its production history safely'}, 409);
+    } else {
+      await db.prepare(`DELETE FROM "${table}" WHERE id=?`).bind(recordId).run();
+    }
+  } catch (error) {
+    if (/FOREIGN KEY constraint failed/i.test(String(error))) return c.json({detail: 'This record is linked to other ERP records. Delete its dependent records first, or delete the parent from its module.'}, 409);
+    throw error;
+  }
+  return c.json({ok:true,table, id:recordId});
+});
 registerProduction(app);
 registerFinance(app);
 registerWhatsapp(app);

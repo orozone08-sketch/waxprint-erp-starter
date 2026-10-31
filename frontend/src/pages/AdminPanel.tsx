@@ -221,15 +221,28 @@ export default function AdminPanel({setPage}:{setPage:(page:string)=>void}){
   finally{setLoading(false)}
  }
 
- const deleteJob=async(row:Record<string,unknown>)=>{
-  const number=String(row.number||'')
-  if(!number)return
-  if(!window.confirm(`Permanently delete job ${number} and its uploaded files and production history? Invoice, expense, advance, and inventory records will be kept but detached from this job.`))return
-  if(window.prompt(`Type ${number} to confirm deletion.`)!==number)return
+ const deleteAdminRecord=async(row:Record<string,unknown>,datasetKey:string)=>{
+  const table=String(row._dataset_key||datasetKey)
+  const id=Number(row.id)
+  const identifier=String(row.number||row.code||row.original_name||row.filename||row.name||`record ${id}`)
+  if(!Number.isSafeInteger(id)||id<=0)return
+  const jobDelete=table==='jobs'
+  const invoiceDelete=table==='invoices'
+  const confirmText=jobDelete
+   ? `Permanently delete job ${identifier}, its uploaded files and production history? A linked invoice used only by this job, its invoice lines, and its payments will also be deleted. Other financial and inventory records will be retained.`
+   : invoiceDelete
+    ? `Permanently delete invoice ${identifier}, all its invoice lines, and recorded payments? This cannot be undone.`
+    : `Permanently delete ${formatColumn(table.replace(/_/g,' '))}: ${identifier}? This cannot be undone.`
+  if(!window.confirm(confirmText))return
+  if(window.prompt(`Type ${identifier} to confirm deletion.`)!==identifier)return
   setLoading(true);setJobDeleteError('');setJobDeleteNotice('')
   try{
-   await deleteJson(`/api/jobs/${Number(row.id)}`)
-   setJobDeleteNotice(`Job ${number}, its files, and linked production records were deleted. Financial and inventory records were retained without the job link.`)
+   if(jobDelete)await deleteJson(`/api/jobs/${id}`)
+   else {
+    const apiTable=table==='inbox'?'inbox_messages':table==='reshoots'?'reshoot_tickets':table
+    await deleteJson(`/api/admin/data/${encodeURIComponent(apiTable)}/${id}`)
+   }
+   setJobDeleteNotice(`${formatColumn(table.replace(/_/g,' '))} ${identifier} was deleted.`)
    await load()
   }catch(x){setJobDeleteError(String(x))}
   finally{setLoading(false)}
@@ -251,7 +264,7 @@ export default function AdminPanel({setPage}:{setPage:(page:string)=>void}){
   </div>,moduleSlot):null}
   {moduleDataset?<>
   {moduleDataset.key==='inbox'&&<GmailAdminSetup gmail={data.integrations.gmail} form={gmailForm} setForm={setGmailForm} notice={gmailNotice} error={gmailError} loading={loading} onSave={saveGmail} onTest={testGmail} onRemove={removeGmail}/>}
-  <ModulePage dataset={moduleDataset} rows={filteredRows} search={dataSearch} setSearch={setDataSearch} onBack={closeModulePage} onDeleteJob={deleteJob} loading={loading} deleteNotice={jobDeleteNotice} deleteError={jobDeleteError}/>
+  <ModulePage dataset={moduleDataset} rows={filteredRows} search={dataSearch} setSearch={setDataSearch} onBack={closeModulePage} onDeleteRecord={deleteAdminRecord} loading={loading} deleteNotice={jobDeleteNotice} deleteError={jobDeleteError}/>
   </>:<>
   <div className="adminHeader">
    <div><p className="eyebrow">Admin</p><h2>Admin Panel</h2><span>Control center for users, masters, system health and financial checks.</span></div>
@@ -457,7 +470,7 @@ function prettyRole(role:string){
 }
 
 function withAllRecords(allData:AdminAllData):AdminDataset[]{
- const allRows=allData.datasets.flatMap(dataset=>dataset.rows.map(row=>({module:dataset.label,...row})))
+ const allRows=allData.datasets.flatMap(dataset=>dataset.rows.map(row=>({module:dataset.label,_dataset_key:dataset.key,...row})))
  return [{key:'all_records',label:'All Records',count:allData.total_records,rows:allRows},...allData.datasets]
 }
 
@@ -467,17 +480,17 @@ function filterRows(rows:Record<string,unknown>[],term:string){
  return rows.filter(row=>Object.values(row).some(value=>String(value??'').toLowerCase().includes(query)))
 }
 
-function DataTable({dataset,rows,onDeleteJob,loading}:{dataset:AdminDataset;rows:Record<string,unknown>[];onDeleteJob:(row:Record<string,unknown>)=>void;loading:boolean}){
- const columns=Array.from(new Set(rows.flatMap(row=>Object.keys(row))))
- const canDeleteJobs=dataset.key==='jobs'
+function DataTable({dataset,rows,onDeleteRecord,loading}:{dataset:AdminDataset;rows:Record<string,unknown>[];onDeleteRecord:(row:Record<string,unknown>,datasetKey:string)=>void;loading:boolean}){
+ const columns=Array.from(new Set(rows.flatMap(row=>Object.keys(row).filter(key=>!key.startsWith('_')))))
+ const canDeleteRows=dataset.key!=='app_users'&&dataset.key!=='audit_logs'
  return <div className="adminDataTableWrap">
   <div className="adminDataTableMeta"><b>{dataset.label}</b><span>{rows.length} of {dataset.count} row(s)</span></div>
-  {canDeleteJobs&&<p className="auditHint">Deleting a job removes its files and production history. Related invoice, expense, advance, and inventory records are kept without the job link.</p>}
-  {rows.length?<table className="adminDataTable"><thead><tr>{columns.map(column=><th key={column}>{formatColumn(column)}</th>)}{canDeleteJobs&&<th>Action</th>}</tr></thead><tbody>{rows.map((row,index)=><tr key={`${dataset.key}-${index}`}>{columns.map(column=><td key={column}>{formatValue(row[column])}</td>)}{canDeleteJobs&&<td><button className="miniBtn warn" type="button" disabled={loading} onClick={()=>onDeleteJob(row)}><Trash2 size={13}/>Delete job</button></td>}</tr>)}</tbody></table>:<div className="emptyState"><Database size={28}/><p>No records found.</p></div>}
+  {dataset.key==='jobs'&&<p className="auditHint">Deleting a job removes its files and production history. A single-job invoice and its payments are deleted with it; other financial records remain.</p>}
+  {rows.length?<table className="adminDataTable"><thead><tr>{columns.map(column=><th key={column}>{formatColumn(column)}</th>)}{canDeleteRows&&<th>Action</th>}</tr></thead><tbody>{rows.map((row,index)=>{const rowTable=String(row._dataset_key||dataset.key);return <tr key={`${dataset.key}-${rowTable}-${row.id||index}`}>{columns.map(column=><td key={column}>{formatValue(row[column])}</td>)}{canDeleteRows&&<td><button className="miniBtn warn" type="button" disabled={loading} onClick={()=>onDeleteRecord(row,dataset.key)}><Trash2 size={13}/>Delete {rowTable==='jobs'?'job':'entry'}</button></td>}</tr>})}</tbody></table>:<div className="emptyState"><Database size={28}/><p>No records found.</p></div>}
  </div>
 }
 
-function ModulePage({dataset,rows,search,setSearch,onBack,onDeleteJob,loading,deleteNotice,deleteError}:{dataset:AdminDataset;rows:Record<string,unknown>[];search:string;setSearch:(value:string)=>void;onBack:()=>void;onDeleteJob:(row:Record<string,unknown>)=>void;loading:boolean;deleteNotice:string;deleteError:string}){
+function ModulePage({dataset,rows,search,setSearch,onBack,onDeleteRecord,loading,deleteNotice,deleteError}:{dataset:AdminDataset;rows:Record<string,unknown>[];search:string;setSearch:(value:string)=>void;onBack:()=>void;onDeleteRecord:(row:Record<string,unknown>,datasetKey:string)=>void;loading:boolean;deleteNotice:string;deleteError:string}){
  return <section className="adminModulePage" id={`module-${dataset.key}`}>
   <div className="adminHeader">
    <div><p className="eyebrow">Data Module</p><h2>{dataset.label}</h2><span>Separate page for {dataset.count} record(s) from this module.</span></div>
@@ -487,9 +500,9 @@ function ModulePage({dataset,rows,search,setSearch,onBack,onDeleteJob,loading,de
    <div><b>{dataset.label}</b><small>{rows.length} visible / {dataset.count} total</small></div>
    <label><Search size={15}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder={`Search ${dataset.label.toLowerCase()}...`}/></label>
   </div>
-  {dataset.key==='jobs'&&deleteNotice&&<div className="successBox">{deleteNotice}</div>}
-  {dataset.key==='jobs'&&deleteError&&<div className="errorBox">{deleteError}</div>}
-  <DataTable dataset={dataset} rows={rows} onDeleteJob={onDeleteJob} loading={loading}/>
+  {deleteNotice&&<div className="successBox">{deleteNotice}</div>}
+  {deleteError&&<div className="errorBox">{deleteError}</div>}
+  <DataTable dataset={dataset} rows={rows} onDeleteRecord={onDeleteRecord} loading={loading}/>
  </section>
 }
 
