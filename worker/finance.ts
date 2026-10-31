@@ -28,6 +28,29 @@ async function materials(c:C) {return all(c,`SELECT m.*,ROUND(COALESCE(SUM(CASE 
 export function registerFinance(app:Hono<Env>) {
  app.get('/api/customers',async c=>c.json(await all(c,'SELECT id,code,name,email,whatsapp,default_rate,credit_days FROM customers ORDER BY name')));
  app.post('/api/customers',async c=>{const d=await body(c);const row=await insert(c,'customers',{code:code('CUST'),name:text(d,'name'),email:d.email??null,whatsapp:d.whatsapp??null,gst_number:d.gst_number??null,default_rate:num(d,'default_rate',0),credit_days:num(d,'credit_days',0)});return c.json(row);});
+ app.post('/api/customers/import',async c=>{
+  requireRoles(c,'ADMIN','ACCOUNTS');
+  const d=await body(c);
+  if(!Array.isArray(d.rows)||d.rows.length<1)throw fail(422,'Upload at least one customer row');
+  if(d.rows.length>500)throw fail(422,'Import up to 500 customers at a time');
+  let imported=0,duplicates=0;const errors:string[]=[];const seenEmails=new Set<string>(),seenPhones=new Set<string>();
+  for(let i=0;i<d.rows.length;i++){
+   const row=d.rows[i];if(!row||typeof row!=='object'||Array.isArray(row)){errors.push(`Row ${i+2}: invalid row`);continue}
+   const name=typeof row.name==='string'?row.name.trim().slice(0,200):'';
+   if(!name){errors.push(`Row ${i+2}: customer name is required`);continue}
+   const email=typeof row.email==='string'&&row.email.trim()?row.email.trim().slice(0,254):null;
+   const whatsapp=typeof row.whatsapp==='string'&&row.whatsapp.trim()?row.whatsapp.trim().slice(0,40):null;
+   const emailKey=email?.toLowerCase()??'',phoneKey=whatsapp?.replace(/\D/g,'')??'';
+   if((emailKey&&seenEmails.has(emailKey))||(phoneKey&&seenPhones.has(phoneKey))){duplicates++;continue}
+   if(emailKey&&await one(c,'SELECT id FROM customers WHERE lower(email)=? LIMIT 1',emailKey)){duplicates++;seenEmails.add(emailKey);if(phoneKey)seenPhones.add(phoneKey);continue}
+   if(phoneKey){const matches=await all(c,"SELECT id,whatsapp FROM customers WHERE whatsapp IS NOT NULL AND whatsapp<>''");if(matches.some(customer=>String(customer.whatsapp).replace(/\D/g,'')===phoneKey)){duplicates++;seenEmails.add(emailKey);seenPhones.add(phoneKey);continue}}
+   const rate=Number(row.default_rate??0),credit=Number(row.credit_days??0);
+   if(!Number.isFinite(rate)||rate<0||!Number.isFinite(credit)||credit<0){errors.push(`Row ${i+2}: rate and credit days must be nonnegative numbers`);continue}
+   await insert(c,'customers',{code:code('CUST'),name,email,whatsapp,gst_number:typeof row.gst_number==='string'&&row.gst_number.trim()?row.gst_number.trim().slice(0,40):null,default_rate:rate,credit_days:Math.floor(credit)});
+   imported++;if(emailKey)seenEmails.add(emailKey);if(phoneKey)seenPhones.add(phoneKey);
+  }
+  return c.json({imported,duplicates,errors});
+ });
  for(const [path,table,fields,defaults,numeric] of [
  ['materials','materials',['code','name','unit','minimum_stock'],{unit:'kg',minimum_stock:0},['minimum_stock']],
  ['suppliers','suppliers',['code','name','gst_number','contact'],{},[]],
