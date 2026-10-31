@@ -85,14 +85,14 @@ export default function Customers(){
   {error&&<div className="errorBox">{error}</div>}
 
   <section className="subPanel customerImportPanel" id="import-customers">
-   <div className="panelHead"><div><h2>Import Customers from Excel</h2><p>Upload an .xlsx Excel sheet or .csv file. Existing customers with the same email or WhatsApp number are skipped.</p></div></div>
+   <div className="panelHead"><div><h2>Import Customers from Excel</h2><p>Upload an .xlsx Excel sheet or .csv file with Customer Name and Rate / g. Email, WhatsApp, credit days, and GST are optional.</p></div></div>
    <div className="customerImportActions">
     <label className="secondaryBtn customerImportChoose"><Upload size={16}/>{importName||'Choose Excel / CSV'}<input type="file" accept=".xlsx,.csv" disabled={loading} onChange={e=>{const file=e.currentTarget.files?.[0];if(file)void readImportFile(file);e.currentTarget.value=''}}/></label>
     <button className="secondaryBtn" type="button" onClick={downloadTemplate}><Download size={16}/>Download template</button>
     {importRows.length>0&&<button className="primaryBtn" type="button" onClick={()=>void importCustomers()} disabled={loading}><FileSpreadsheet size={16}/>{loading?'Importing…':`Import ${importRows.length} customers`}</button>}
    </div>
    {importRows.length>0&&<><p className="mutedCell">Preview: first {Math.min(importRows.length,5)} of {importRows.length} rows. Rate / g and credit days default to 0 and 0 when blank.</p><div className="tableScroll"><table><thead><tr><th>Name</th><th>Email</th><th>WhatsApp</th><th>Rate / g</th><th>Credit days</th></tr></thead><tbody>{importRows.slice(0,5).map((row,i)=><tr key={`${row.name}-${i}`}><td>{row.name}</td><td>{row.email||'-'}</td><td>{row.whatsapp||'-'}</td><td>{row.default_rate}</td><td>{row.credit_days}</td></tr>)}</tbody></table></div></>}
-   <small className="mutedCell">Expected columns: Name, Email, WhatsApp/Phone, Rate per gram, Credit days, GST number. The header row can use common alternatives such as Customer Name or Mobile.</small>
+   <small className="mutedCell">Required columns: Customer Name and Rate / g. Optional columns: Email, WhatsApp/Phone, Credit days, and GST number.</small>
   </section>
 
   <section id="add-customer" className="subPanel">
@@ -124,11 +124,11 @@ export default function Customers(){
 }
 
 function downloadTemplate(){
- const csv='Name,Email,WhatsApp,Rate per gram,Credit days,GST number\r\nExample Customer,customer@example.com,9876543210,150,30,\r\n'
- const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='customer-import-template.csv';a.click();URL.revokeObjectURL(url)
+ const csv='Customer Name,Rate / g\r\nExample Customer,150\r\n'
+ const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='customer-name-rate-template.csv';a.click();URL.revokeObjectURL(url)
 }
 function normalizeHeader(value:string){return value.trim().toLowerCase().replace(/[^a-z0-9]+/g,' ').trim()}
-const HEADER_ALIASES:Record<string,string[]>={name:['name','customer','customer name','client name','party name','account name'],email:['email','email address','e mail'],whatsapp:['whatsapp','whatsapp number','phone','phone number','mobile','mobile number','contact','contact number'],default_rate:['rate','rate g','rate per g','rate per gram','default rate','default rate g','price per gram'],credit_days:['credit','credit days','payment days','due days'],gst_number:['gst','gst no','gst number','gstin','gst registration number']}
+const HEADER_ALIASES:Record<string,string[]>={name:['name','customer','customer name','client name','party name','account name'],email:['email','email address','e mail'],whatsapp:['whatsapp','whatsapp number','phone','phone number','mobile','mobile number','contact','contact number'],default_rate:['rate','rate g','customer rate','rate per g','rate per gram','default rate','default rate g','price per gram'],credit_days:['credit','credit days','payment days','due days'],gst_number:['gst','gst no','gst number','gstin','gst registration number']}
 function mapCustomerRows(matrix:string[][]):ImportCustomer[]{
  let headerIndex=-1,columns:Record<string,number>={};let best=0
  for(let i=0;i<Math.min(matrix.length,15);i++){
@@ -137,11 +137,13 @@ function mapCustomerRows(matrix:string[][]):ImportCustomer[]{
   if(found.name!==undefined&&Object.keys(found).length>best){headerIndex=i;columns=found;best=Object.keys(found).length}
  }
  if(headerIndex<0)return []
+ if(columns.default_rate===undefined)throw new Error('The sheet needs a Rate / g column in addition to Customer Name.')
  const cell=(row:string[],key:string)=>columns[key]===undefined?'':String(row[columns[key]]??'').trim()
  return matrix.slice(headerIndex+1).map((row,index)=>{
-  const rawRate=cell(row,'default_rate'),rawCredit=cell(row,'credit_days'),rate=toNonnegative(rawRate),credit=toNonnegative(rawCredit)
+  const name=cell(row,'name'),rawRate=cell(row,'default_rate'),rawCredit=cell(row,'credit_days'),rate=toNonnegative(rawRate),credit=toNonnegative(rawCredit)
+  if(name&&!rawRate)throw new Error(`Row ${headerIndex+index+2}: Rate / g is required.`)
   if(Number.isNaN(rate)||Number.isNaN(credit))throw new Error(`Row ${headerIndex+index+2}: Rate / g and Credit days must be nonnegative numbers.`)
-  return {name:cell(row,'name'),email:cell(row,'email')||null,whatsapp:cell(row,'whatsapp')||null,default_rate:rate,credit_days:Math.floor(credit),gst_number:cell(row,'gst_number')||null}
+  return {name,email:cell(row,'email')||null,whatsapp:cell(row,'whatsapp')||null,default_rate:rate,credit_days:Math.floor(credit),gst_number:cell(row,'gst_number')||null}
  }).filter(row=>row.name)
 }
 function toNonnegative(value:string){if(!value)return 0;const n=Number(value.replace(/[₹,\s]/g,''));return Number.isFinite(n)&&n>=0?n:NaN}
