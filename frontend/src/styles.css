@@ -359,6 +359,7 @@ tr:last-child td{border-bottom:0}
 .stlCanvasWrap canvas{display:block;width:100%;height:100%;cursor:grab}
 .stlCanvasWrap canvas:active{cursor:grabbing}
 .stlStatus{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px 12px;color:#34495c;font-size:13px;font-weight:900;box-shadow:0 12px 28px rgba(12,31,46,.12)}
+.repairProgress{position:static;transform:none;display:flex;align-items:center;gap:8px;box-shadow:none}
 .repairOverlay{z-index:78}
 .stlRepairModal{height:min(780px,92vh);grid-template-rows:auto minmax(0,1fr)}
 .stlRepairBody{overflow:auto;padding:16px;display:flex;flex-direction:column;gap:12px}

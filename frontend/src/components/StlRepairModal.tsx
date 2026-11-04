@@ -9,6 +9,7 @@ export type RepairableStlFile=StlPreviewFile&{original_download_url:string}
 
 export default function StlRepairModal({jobId,file,onClose,onSaved}:{jobId:number;file:RepairableStlFile;onClose:()=>void;onSaved:()=>Promise<void>|void}){
  const[loading,setLoading]=useState(false)
+ const[progress,setProgress]=useState('')
  const[error,setError]=useState('')
  const[notice,setNotice]=useState('')
  const[report,setReport]=useState<StlRepairReport|null>(null)
@@ -20,15 +21,15 @@ export default function StlRepairModal({jobId,file,onClose,onSaved}:{jobId:numbe
  useEffect(()=>()=>{if(repairUrl)URL.revokeObjectURL(repairUrl)},[repairUrl])
 
  const runRepair=async()=>{
-  setLoading(true);setError('');setNotice('');setReport(null);setRepairBlob(null);setRepairUrl('');setReviewed(false)
+  setLoading(true);setError('');setNotice('');setProgress('Preparing repair engine…');setReport(null);setRepairBlob(null);setRepairUrl('');setReviewed(false)
   try{
    const source=await fetchBlob(file.original_download_url)
-   const result=repairStl(await source.arrayBuffer())
+   const result=await repairStl(await source.arrayBuffer(),event=>setProgress(`${event.step} · ${event.stepIndex+1}/${event.totalSteps}`))
    const blob=new Blob([result.data],{type:'model/stl'})
    setRepairBlob(blob);setReport(result.report);setRepairUrl(URL.createObjectURL(blob))
    setNotice(result.report.watertight?'Repair candidate is ready. Preview it and confirm your review before saving.':'Some mesh problems remain. This candidate cannot be saved as production-ready.')
   }catch(x){setError(String(x))}
-  finally{setLoading(false)}
+  finally{setLoading(false);setProgress('')}
  }
 
  const saveRepair=async()=>{
@@ -58,7 +59,7 @@ export default function StlRepairModal({jobId,file,onClose,onSaved}:{jobId:numbe
      <button className="iconBtn" type="button" onClick={onClose} aria-label="Close repair"><X size={18}/></button>
     </div>
     <div className="stlRepairBody">
-     <div className="infoBox"><b>Automatic basic mesh repair</b><br/>The ERP removes degenerate and duplicate triangles, corrects face direction, and caps only small planar convex openings. Review the 3D result before saving. This does not replace Magics for complex defects.</div>
+     <div className="infoBox"><b>Automatic mesh repair</b><br/>The browser repair engine welds close vertices, separates non-manifold vertices, removes bad and duplicate triangles, fills repairable holes, and corrects normals. Openings that look intentional are preserved. This is an open-source repair pipeline, not Materialise Magics; complex or ambiguous defects still need Magics/manual review.</div>
      {error&&<div className="errorBox">{error}</div>}
      {notice&&<div className={notice.includes('Weight was not calculated')?'warningBox':report?.watertight?'successBox':'warningBox'}>{notice}</div>}
      <div className="infoBox">After a repaired STL is saved, its weight is calculated automatically using enclosed volume in cm³ × 0.9.</div>
@@ -67,9 +68,10 @@ export default function StlRepairModal({jobId,file,onClose,onSaved}:{jobId:numbe
        <Metric label="Triangles" value={`${report.inputTriangles.toLocaleString()} → ${report.outputTriangles.toLocaleString()}`}/>
        <Metric label="Degenerate removed" value={report.removedDegenerate.toLocaleString()}/>
        <Metric label="Duplicates removed" value={report.removedDuplicate.toLocaleString()}/>
-       <Metric label="Small holes capped" value={report.filledHoles.toLocaleString()}/>
+       <Metric label="Holes filled" value={report.filledHoles.toLocaleString()}/>
        <Metric label="Remaining open loops" value={report.unfilledBoundaries.toLocaleString()}/>
        <Metric label="Non-manifold edges" value={report.nonManifoldEdges.toLocaleString()}/>
+      <Metric label="Non-manifold vertices" value={report.nonManifoldVertices.toLocaleString()}/>
       </div>
       <div className={report.watertight?'successBox':'warningBox'}>{report.watertight?<><CheckCircle2 size={16}/> Mesh is closed and passed the basic topology check. Visual review is still required.</>:<><AlertTriangle size={16}/> Mesh is still open or non-manifold. Do not use this candidate for production.</>}</div>
       {!!report.warnings.length&&<ul className="repairWarnings">{report.warnings.map((warning,i)=><li key={i}>{warning}</li>)}</ul>}
@@ -80,6 +82,7 @@ export default function StlRepairModal({jobId,file,onClose,onSaved}:{jobId:numbe
       {repairBlob&&<button className="secondaryBtn" type="button" onClick={()=>downloadFile(repairUrl,`repaired-${file.name}`)}><Download size={16}/>Download candidate</button>}
       <button className="secondaryBtn" type="button" onClick={runRepair} disabled={loading}>{loading?<LoaderCircle size={16} className="spinIcon"/>:<Wrench size={16}/>}Run repair</button>
      </div>
+     {progress&&<div className="stlStatus repairProgress"><LoaderCircle size={15} className="spinIcon"/>{progress}</div>}
      {repairBlob&&report?.watertight&&<label className="repairReview"><input type="checkbox" checked={reviewed} onChange={e=>setReviewed(e.target.checked)}/> I previewed the repaired mesh and approve this file for the next ERP step.</label>}
      <div className="repairFooter"><small>Saving creates the processed copy used by downstream ERP steps. The original download stays unchanged.</small><button className="primaryBtn" type="button" onClick={saveRepair} disabled={loading||!repairBlob||!report?.watertight||!reviewed}><Save size={16}/>{loading?'Saving…':'Accept & Save Repaired STL'}</button></div>
     </div>

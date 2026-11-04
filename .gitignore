@@ -5,6 +5,7 @@ backend/data/files/*
 !backend/data/files/.gitkeep
 frontend/node_modules/
 frontend/dist/
+frontend/public/meshfix/
 frontend/.env
 magics_agent/.env
 __pycache__/
