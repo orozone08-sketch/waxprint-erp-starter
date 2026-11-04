@@ -175,7 +175,13 @@ export function registerProduction(app: Hono<Env>) {
     if (f.job_id !== j.id) fail(404, 'File is not part of this job')
     const originalName = String(f.original_name).toLowerCase()
     if (!originalName.endsWith('.stl') && !originalName.endsWith('.glb')) fail(415, 'ERP automatic repair supports STL and binary GLB files.')
-    if (['ON_PLATFORM','PRINTING','QC_PASSED','QC_FAILED','RESHOOT_PENDING'].includes(f.status)) fail(409, 'This file has already entered platform or print production')
+    if (['PRINTING','QC_PASSED','QC_FAILED','RESHOOT_PENDING'].includes(f.status)) fail(409, 'Repair is locked after a print attempt has started')
+    const attempts = await one(c, 'SELECT COUNT(*) count FROM print_attempts WHERE job_file_id=?', f.id) as Row
+    if (Number(attempts?.count)) fail(409, 'Repair is locked after a print attempt has started')
+    if (f.status === 'ON_PLATFORM') {
+      const platformState = await one(c, `SELECT COUNT(*) total, SUM(CASE WHEN p.status='READY' THEN 1 ELSE 0 END) ready FROM platform_files pf JOIN platforms p ON p.id=pf.platform_id WHERE pf.job_file_id=?`, f.id) as Row
+      if (!Number(platformState?.total) || Number(platformState.ready) !== Number(platformState.total)) fail(409, 'Remove this file from any platform that is printing or no longer ready before repairing it')
+    }
     const form = await c.req.parseBody(); const upload = form.processed_file
     if (!(upload instanceof File) || !upload.name.toLowerCase().endsWith('.stl')) fail(415, 'The repaired output must be an STL file.')
     let report: Row
