@@ -295,6 +295,10 @@ export const schema = {
       "type": "string",
       "nullable": true
     },
+    "processed_name": {
+      "type": "string",
+      "nullable": true
+    },
     "sha256": {
       "type": "string",
       "nullable": true

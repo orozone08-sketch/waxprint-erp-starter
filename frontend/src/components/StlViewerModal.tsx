@@ -2,6 +2,7 @@ import {useEffect, useRef, useState} from 'react'
 import {Download, X} from 'lucide-react'
 import * as THREE from 'three'
 import {STLLoader} from 'three/examples/jsm/loaders/STLLoader.js'
+import {GLTFLoader} from 'three/examples/jsm/loaders/GLTFLoader.js'
 import {downloadFile, fetchBlob} from '../api'
 
 export type StlPreviewFile={id:number;name:string;download_url:string}
@@ -17,7 +18,7 @@ export default function StlViewerModal({file,onClose}:{file:StlPreviewFile|null;
   mount.innerHTML=''
   let animation=0
   let disposed=false
-  let mesh:THREE.Mesh<THREE.BufferGeometry,THREE.MeshStandardMaterial>|null=null
+  let model:THREE.Object3D|null=null
   let dragging=false
   let lastX=0
   let lastY=0
@@ -53,11 +54,11 @@ export default function StlViewerModal({file,onClose}:{file:StlPreviewFile|null;
 
   const onPointerDown=(event:PointerEvent)=>{dragging=true;lastX=event.clientX;lastY=event.clientY;renderer.domElement.setPointerCapture(event.pointerId)}
   const onPointerMove=(event:PointerEvent)=>{
-   if(!dragging||!mesh)return
+   if(!dragging||!model)return
    const dx=event.clientX-lastX
    const dy=event.clientY-lastY
-   mesh.rotation.y+=dx*.01
-   mesh.rotation.x+=dy*.01
+   model.rotation.y+=dx*.01
+   model.rotation.x+=dy*.01
    lastX=event.clientX
    lastY=event.clientY
   }
@@ -69,7 +70,7 @@ export default function StlViewerModal({file,onClose}:{file:StlPreviewFile|null;
 
   const animate=()=>{
    if(disposed)return
-   if(mesh&&!dragging)mesh.rotation.z+=.004
+   if(model&&!dragging)model.rotation.z+=.004
    renderer.render(scene,camera)
    animation=window.requestAnimationFrame(animate)
   }
@@ -80,17 +81,25 @@ export default function StlViewerModal({file,onClose}:{file:StlPreviewFile|null;
   const modelPromise=file.download_url.startsWith('blob:')?fetch(file.download_url).then(response=>{if(!response.ok)throw new Error('The local preview is no longer available.');return response.blob()}):fetchBlob(file.download_url)
   modelPromise
    .then(blob=>blob.arrayBuffer())
-   .then(buffer=>{
+   .then(async buffer=>{
     if(disposed)return
-    const geometry=new STLLoader().parse(buffer)
-    geometry.computeVertexNormals()
-    geometry.center()
-    geometry.computeBoundingSphere()
-    const radius=Math.max(geometry.boundingSphere?.radius||1,1)
-    const material=new THREE.MeshStandardMaterial({color:0xe94d4f,metalness:.12,roughness:.48})
-    mesh=new THREE.Mesh(geometry,material)
-    mesh.rotation.x=-Math.PI/2
-    scene.add(mesh)
+    if(/\.glb$/i.test(file.name)){
+     const gltf=await new GLTFLoader().parseAsync(buffer,'')
+     model=gltf.scene
+     model.updateMatrixWorld(true)
+     const bounds=new THREE.Box3().setFromObject(model)
+     model.position.sub(bounds.getCenter(new THREE.Vector3()))
+    }else{
+     const geometry=new STLLoader().parse(buffer)
+     geometry.computeVertexNormals()
+     geometry.center()
+     model=new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({color:0xe94d4f,metalness:.12,roughness:.48}))
+    }
+    const bounds=new THREE.Box3().setFromObject(model)
+    const sphere=bounds.getBoundingSphere(new THREE.Sphere())
+    const radius=Math.max(sphere.radius||1,1e-3)
+    model.rotation.x=-Math.PI/2
+    scene.add(model)
     grid.scale.setScalar(radius/45)
     camera.near=radius/100
     camera.far=radius*80
@@ -109,8 +118,13 @@ export default function StlViewerModal({file,onClose}:{file:StlPreviewFile|null;
    renderer.domElement.removeEventListener('pointermove',onPointerMove)
    renderer.domElement.removeEventListener('pointerup',onPointerUp)
    renderer.domElement.removeEventListener('pointerleave',onPointerUp)
-   mesh?.geometry.dispose()
-   mesh?.material.dispose()
+   model?.traverse(node=>{
+    const item=node as THREE.Mesh
+    if(!item.isMesh)return
+    item.geometry.dispose()
+    const materials=Array.isArray(item.material)?item.material:[item.material]
+    materials.forEach(material=>material.dispose())
+   })
    renderer.dispose()
    mount.innerHTML=''
   }
@@ -127,7 +141,7 @@ export default function StlViewerModal({file,onClose}:{file:StlPreviewFile|null;
     </div>
    </div>
    <div className="stlCanvasWrap" ref={mountRef}>
-    {loading&&<div className="stlStatus">Loading STL...</div>}
+    {loading&&<div className="stlStatus">Loading 3D file...</div>}
     {error&&<div className="stlStatus error">{error}</div>}
    </div>
   </div>

@@ -2,7 +2,7 @@ import {useEffect,useState} from 'react'
 import {AlertTriangle,CheckCircle2,Download,Eye,LoaderCircle,Save,Wrench,X} from 'lucide-react'
 import {downloadFile,fetchBlob,postForm,postJson} from '../api'
 import StlViewerModal,{type StlPreviewFile} from './StlViewerModal'
-import {repairStl,type StlRepairReport} from '../lib/stlRepair'
+import {glbToStl,repairStl,type StlRepairReport} from '../lib/stlRepair'
 import {calculateStlWeight} from '../stlWeight'
 
 export type RepairableStlFile=StlPreviewFile&{original_download_url:string}
@@ -15,16 +15,24 @@ export default function StlRepairModal({jobId,file,onClose,onSaved}:{jobId:numbe
  const[report,setReport]=useState<StlRepairReport|null>(null)
  const[repairBlob,setRepairBlob]=useState<Blob|null>(null)
  const[repairUrl,setRepairUrl]=useState('')
+ const[sourceUrl,setSourceUrl]=useState('')
  const[preview,setPreview]=useState<StlPreviewFile|null>(null)
  const[reviewed,setReviewed]=useState(false)
 
  useEffect(()=>()=>{if(repairUrl)URL.revokeObjectURL(repairUrl)},[repairUrl])
+ useEffect(()=>()=>{if(sourceUrl)URL.revokeObjectURL(sourceUrl)},[sourceUrl])
+
+ const isGlb=/\.glb$/i.test(file.name)
+ const repairedName=isGlb?file.name.replace(/\.glb$/i,'')+'_repaired.stl':file.name
 
  const runRepair=async()=>{
-  setLoading(true);setError('');setNotice('');setProgress('Preparing repair engine…');setReport(null);setRepairBlob(null);setRepairUrl('');setReviewed(false)
+  setLoading(true);setError('');setNotice('');setProgress(isGlb?'Converting GLB scene to STL…':'Preparing repair engine…');setReport(null);setRepairBlob(null);setRepairUrl('');setSourceUrl('');setReviewed(false)
   try{
    const source=await fetchBlob(file.original_download_url)
-   const result=await repairStl(await source.arrayBuffer(),event=>setProgress(`${event.step} · ${event.stepIndex+1}/${event.totalSteps}`))
+   const sourceBuffer=await source.arrayBuffer()
+   const stlBuffer=isGlb?await glbToStl(sourceBuffer):sourceBuffer
+   if(isGlb)setSourceUrl(URL.createObjectURL(new Blob([stlBuffer],{type:'model/stl'})))
+   const result=await repairStl(stlBuffer,event=>setProgress(`${event.step} · ${event.stepIndex+1}/${event.totalSteps}`))
    const blob=new Blob([result.data],{type:'model/stl'})
    setRepairBlob(blob);setReport(result.report);setRepairUrl(URL.createObjectURL(blob))
    setNotice(result.report.watertight?'Repair candidate is ready. Preview it and confirm your review before saving.':'Some mesh problems remain. This candidate cannot be saved as production-ready.')
@@ -36,7 +44,7 @@ export default function StlRepairModal({jobId,file,onClose,onSaved}:{jobId:numbe
   if(!repairBlob||!report?.watertight||!reviewed)return
   setLoading(true);setError('');setNotice('')
   try{
-   const form=new FormData();form.append('processed_file',new File([repairBlob],file.name,{type:'model/stl'}));form.append('repair_report',JSON.stringify(report))
+   const form=new FormData();form.append('processed_file',new File([repairBlob],repairedName,{type:'model/stl'}));form.append('repair_report',JSON.stringify(report))
    await postForm(`/api/jobs/${jobId}/files/${file.id}/stl-repair`,form)
    let message=`${file.name}: repaired STL saved. The original remains available.`
    try{
@@ -50,16 +58,16 @@ export default function StlRepairModal({jobId,file,onClose,onSaved}:{jobId:numbe
   finally{setLoading(false)}
  }
 
- const candidate={id:file.id,name:`${file.name} · repaired preview`,download_url:repairUrl}
+ const candidate={id:file.id,name:repairedName,download_url:repairUrl}
  return <>
   <div className="stlOverlay repairOverlay" role="dialog" aria-modal="true" aria-label={`Repair ${file.name}`}>
    <div className="stlModal stlRepairModal">
     <div className="stlModalHead">
-     <div><h2>Repair STL in ERP</h2><p>{file.name} · original file is preserved</p></div>
+     <div><h2>{isGlb?'Convert & Repair GLB in ERP':'Repair STL in ERP'}</h2><p>{file.name} · original file is preserved</p></div>
      <button className="iconBtn" type="button" onClick={onClose} aria-label="Close repair"><X size={18}/></button>
     </div>
     <div className="stlRepairBody">
-     <div className="infoBox"><b>Automatic mesh repair</b><br/>The browser repair engine welds close vertices, separates non-manifold vertices, removes bad and duplicate triangles, fills repairable holes, and corrects normals. Openings that look intentional are preserved. This is an open-source repair pipeline, not Materialise Magics; complex or ambiguous defects still need Magics/manual review.</div>
+     <div className="infoBox"><b>{isGlb?'Convert GLB to STL, then repair':'Automatic mesh repair'}</b><br/>{isGlb?'The ERP converts standard glTF meter coordinates to millimeters, creates an STL copy, then runs its browser repair engine. The repaired STL is saved alongside the unchanged original GLB.':'The browser repair engine welds close vertices, separates non-manifold vertices, removes bad and duplicate triangles, fills repairable holes, and corrects normals.'} Openings that look intentional are preserved. This is an open-source repair pipeline, not Materialise Magics; complex or ambiguous defects still need specialist review.</div>
      {error&&<div className="errorBox">{error}</div>}
      {notice&&<div className={notice.includes('Weight was not calculated')?'warningBox':report?.watertight?'successBox':'warningBox'}>{notice}</div>}
      <div className="infoBox">After a repaired STL is saved, its weight is calculated automatically using enclosed volume in cm³ × 0.9.</div>
@@ -77,14 +85,15 @@ export default function StlRepairModal({jobId,file,onClose,onSaved}:{jobId:numbe
       {!!report.warnings.length&&<ul className="repairWarnings">{report.warnings.map((warning,i)=><li key={i}>{warning}</li>)}</ul>}
      </>}
      <div className="repairActions">
-      <button className="secondaryBtn" type="button" onClick={()=>setPreview({id:file.id,name:file.name,download_url:file.original_download_url})} disabled={loading}><Eye size={16}/>Preview original</button>
+      {!isGlb&&<button className="secondaryBtn" type="button" onClick={()=>setPreview({id:file.id,name:file.name,download_url:file.original_download_url})} disabled={loading}><Eye size={16}/>Preview original</button>}
+      {sourceUrl&&<button className="secondaryBtn" type="button" onClick={()=>setPreview({id:file.id,name:`${file.name} · converted source STL`,download_url:sourceUrl})} disabled={loading}><Eye size={16}/>{isGlb?'Preview converted source':'Preview source'}</button>}
       {repairUrl&&<button className="secondaryBtn" type="button" onClick={()=>setPreview(candidate)} disabled={loading}><Eye size={16}/>Preview repaired</button>}
-      {repairBlob&&<button className="secondaryBtn" type="button" onClick={()=>downloadFile(repairUrl,`repaired-${file.name}`)}><Download size={16}/>Download candidate</button>}
-      <button className="secondaryBtn" type="button" onClick={runRepair} disabled={loading}>{loading?<LoaderCircle size={16} className="spinIcon"/>:<Wrench size={16}/>}Run repair</button>
+      {repairBlob&&<button className="secondaryBtn" type="button" onClick={()=>downloadFile(repairUrl,repairedName)}><Download size={16}/>Download candidate</button>}
+      <button className="secondaryBtn" type="button" onClick={runRepair} disabled={loading}>{loading?<LoaderCircle size={16} className="spinIcon"/>:<Wrench size={16}/>} {isGlb?'Convert & Repair':'Run repair'}</button>
      </div>
      {progress&&<div className="stlStatus repairProgress"><LoaderCircle size={15} className="spinIcon"/>{progress}</div>}
      {repairBlob&&report?.watertight&&<label className="repairReview"><input type="checkbox" checked={reviewed} onChange={e=>setReviewed(e.target.checked)}/> I previewed the repaired mesh and approve this file for the next ERP step.</label>}
-     <div className="repairFooter"><small>Saving creates the processed copy used by downstream ERP steps. The original download stays unchanged.</small><button className="primaryBtn" type="button" onClick={saveRepair} disabled={loading||!repairBlob||!report?.watertight||!reviewed}><Save size={16}/>{loading?'Saving…':'Accept & Save Repaired STL'}</button></div>
+     <div className="repairFooter"><small>Saving creates {isGlb?'a repaired STL copy':'the processed copy'} used by downstream ERP steps. The original download stays unchanged.</small><button className="primaryBtn" type="button" onClick={saveRepair} disabled={loading||!repairBlob||!report?.watertight||!reviewed}><Save size={16}/>{loading?'Saving…':'Accept & Save Repaired STL'}</button></div>
     </div>
    </div>
   </div>

@@ -99,7 +99,7 @@ export function registerProduction(app: Hono<Env>) {
   app.get('/api/jobs/:job_id', async c => {
     const j = await get(c, 'jobs', c.req.param('job_id'), 'Job'); const customer = await get(c, 'customers', j.customer_id, 'Customer')
     const [files, magics, reshoots, dispatches, returns] = await Promise.all([
-      all(c, 'SELECT id,file_uid,original_name name,status,quantity,sha256,processed_path,weight_g,weight_source,weight_recorded_at FROM job_files WHERE job_id=?', j.id),
+      all(c, 'SELECT id,file_uid,original_name name,status,quantity,sha256,processed_path,processed_name,weight_g,weight_source,weight_recorded_at FROM job_files WHERE job_id=?', j.id),
       all(c, 'SELECT id,operator_name operator,workstation,status,checker_name checker,approved FROM magics_sessions WHERE job_id=? ORDER BY id DESC', j.id),
       all(c, 'SELECT id,number,job_file_id file_id,source,reason,quantity,status,chargeable FROM reshoot_tickets WHERE job_id=?', j.id),
       all(c, 'SELECT * FROM dispatches WHERE job_id=?', j.id),
@@ -111,7 +111,7 @@ export function registerProduction(app: Hono<Env>) {
     const j = await get(c, 'jobs', c.req.param('job_id'), 'Job'); const b = await c.req.parseBody(); const quantity = integer(b.quantity ?? 1, 'Quantity'); const f = await store(c, b.upload, j, 'original'); const uid = code('F')
     try { const result = await database(c).batch([add(c, 'job_files', { job_id: j.id, file_uid: uid, original_name: f.name, original_path: f.key, sha256: f.digest, quantity, status: 'RECEIVED' }), set(c, 'jobs', j.id, { status: 'WAITING_MAGICS' })]); return c.json({ id: result[0].meta.last_row_id, file_uid: uid, name: f.name, sha256: f.digest, size: f.size }) } catch (e) { await files(c).delete(f.key); throw e }
   })
-  app.get('/api/job-files/:file_id/download', async c => { const f = await get(c, 'job_files', c.req.param('file_id'), 'File'); const original = c.req.query('version') === 'original'; return download(c, !original && f.processed_path ? f.processed_path : f.original_path, f.original_name) })
+  app.get('/api/job-files/:file_id/download', async c => { const f = await get(c, 'job_files', c.req.param('file_id'), 'File'); const original = c.req.query('version') === 'original'; return download(c, !original && f.processed_path ? f.processed_path : f.original_path, !original && f.processed_path ? (f.processed_name || f.original_name) : f.original_name) })
   app.post('/api/job-files/:file_id/weight', async c => {
     const f = await get(c, 'job_files', c.req.param('file_id'), 'File'); const b = await body(c); const job = await get(c, 'jobs', f.job_id, 'Job')
     if (job.status === 'INVOICED') fail(409, 'This job is already invoiced; create an adjustment instead of changing its file weight')
@@ -152,7 +152,7 @@ export function registerProduction(app: Hono<Env>) {
     if (['ON_PLATFORM','PRINTING','QC_PASSED','QC_FAILED','RESHOOT_PENDING'].includes(f.status)) fail(409, 'This file has already entered platform or print production')
     const form = await c.req.parseBody(); const upload = form.processed_file
     const processed = await store(c, upload, j, 'magics-processed')
-    try { await update(c, 'job_files', f.id, { processed_path: processed.key }); }
+    try { await update(c, 'job_files', f.id, { processed_path: processed.key, processed_name: processed.name }); }
     catch (e) { await files(c).delete(processed.key); throw e }
     if (f.processed_path) await files(c).delete(f.processed_path)
     return c.json({ file_id: f.id, name: processed.name, sha256: processed.digest, size: processed.size, processed: true })
@@ -165,7 +165,7 @@ export function registerProduction(app: Hono<Env>) {
     if (['ON_PLATFORM','PRINTING','QC_PASSED','QC_FAILED','RESHOOT_PENDING'].includes(f.status)) fail(409, 'This file has already entered platform or print production')
     const form = await c.req.parseBody(); const upload = form.processed_file
     const processed = await store(c, upload, j, 'magics-processed')
-    try { await update(c, 'job_files', f.id, { processed_path: processed.key }); }
+    try { await update(c, 'job_files', f.id, { processed_path: processed.key, processed_name: processed.name }); }
     catch (e) { await files(c).delete(processed.key); throw e }
     if (f.processed_path) await files(c).delete(f.processed_path)
     return c.json({ file_id: f.id, name: processed.name, sha256: processed.digest, size: processed.size, processed: true })
@@ -173,7 +173,8 @@ export function registerProduction(app: Hono<Env>) {
   app.post('/api/jobs/:job_id/files/:file_id/stl-repair', async c => {
     const jobId = integer(c.req.param('job_id'), 'Job id'); const j = await get(c, 'jobs', jobId, 'Job'); const f = await get(c, 'job_files', c.req.param('file_id'), 'File')
     if (f.job_id !== j.id) fail(404, 'File is not part of this job')
-    if (!String(f.original_name).toLowerCase().endsWith('.stl')) fail(415, 'ERP automatic repair supports STL files only.')
+    const originalName = String(f.original_name).toLowerCase()
+    if (!originalName.endsWith('.stl') && !originalName.endsWith('.glb')) fail(415, 'ERP automatic repair supports STL and binary GLB files.')
     if (['ON_PLATFORM','PRINTING','QC_PASSED','QC_FAILED','RESHOOT_PENDING'].includes(f.status)) fail(409, 'This file has already entered platform or print production')
     const form = await c.req.parseBody(); const upload = form.processed_file
     if (!(upload instanceof File) || !upload.name.toLowerCase().endsWith('.stl')) fail(415, 'The repaired output must be an STL file.')
@@ -181,7 +182,7 @@ export function registerProduction(app: Hono<Env>) {
     try { report = JSON.parse(String(form.repair_report || '{}')) as Row } catch { fail(422, 'Repair report is invalid.') }
     if (report.watertight !== true || Number(report.unfilledBoundaries) !== 0 || Number(report.nonManifoldEdges) !== 0 || !Number.isInteger(Number(report.outputTriangles)) || Number(report.outputTriangles) < 1) fail(422, 'This STL did not pass the closed-mesh check and cannot be saved as production-ready.')
     const processed = await store(c, upload, j, 'stl-repair')
-    try { await update(c, 'job_files', f.id, { processed_path: processed.key }); }
+    try { await update(c, 'job_files', f.id, { processed_path: processed.key, processed_name: processed.name }); }
     catch (e) { await files(c).delete(processed.key); throw e }
     if (f.processed_path) await files(c).delete(f.processed_path)
     return c.json({ file_id: f.id, name: processed.name, sha256: processed.digest, size: processed.size, processed: true, repair_report: report })

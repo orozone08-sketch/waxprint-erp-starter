@@ -5,7 +5,7 @@ import StlRepairModal,{type RepairableStlFile} from '../components/StlRepairModa
 import {downloadFile,getJson,postForm} from '../api'
 import {Job} from '../types'
 
-type JobFile=RepairableStlFile&{file_uid:string;status:string;quantity:number;sha256:string|null;weight_g:number|null}
+type JobFile=RepairableStlFile&{file_uid:string;status:string;quantity:number;sha256:string|null;weight_g:number|null;processed_name?:string|null;processed?:boolean}
 type DispatchRow={id:number;number:string;courier:string|null;tracking_no:string|null;delivered_by:string|null;status:string}
 type JobDetail={job:Job;files:JobFile[];dispatches:DispatchRow[]}
 type PrintAttempt={id:number;file_id:number;machine_id:number|null;attempt_no:number;is_reshoot:boolean;status:string;good_qty:number;bad_qty:number}
@@ -97,9 +97,9 @@ export default function Jobs(){
      <td><b>{j.number}</b><small className="jobTrackerSub">{j.customer}</small><small className="jobTrackerSub">{pretty(j.source)}</small></td>
      <td><span className={`badge ${j.status==='DISPATCHED'||j.status==='INVOICED'?'success':['MAGICS_REPAIR','PRINTING','RESHOOT_PENDING','WEIGHT_PENDING'].includes(j.status)?'warn':''}`}>{stageName[j.status]||pretty(j.status)}</span><small className="jobTrackerSub">{pretty(j.status)}</small></td>
      <td><div className="jobTrackerFiles">{files.length?files.map(f=><div className="jobTrackerFile" key={f.id}>
-      <div><button className="tableLinkBtn" type="button" onClick={()=>setPreviewFile(f)}><FileText size={13}/>{f.name}</button><small>{f.weight_g?`${f.weight_g} g saved`:'Weight pending'} · Qty {f.quantity}</small></div>
+      <div><button className="tableLinkBtn" type="button" onClick={()=>setPreviewFile({...f,name:f.processed_name||f.name})}><FileText size={13}/>{f.name}</button><small>{f.weight_g?`${f.weight_g} g saved`:'Weight pending'} · Qty {f.quantity}</small></div>
       <span className={`badge ${f.status==='QC_PASSED'?'success':['PRINTING','RESHOOT_PENDING','QC_FAILED'].includes(f.status)?'warn':''}`}>{fileStatus(f.status)}</span>
-      <div className="jobTrackerFileActions"><button className="fileDownloadBtn" type="button" onClick={()=>downloadFile(f.download_url,f.name)} aria-label={`Download ${f.name}`}><Download size={13}/></button>{f.name.toLowerCase().endsWith('.stl')&&<button className="fileRepairBtn" type="button" disabled={loading||repairable.has(f.status)} onClick={()=>setRepairTarget({jobId:j.id,file:f})}><Wrench size={13}/>Repair STL</button>}</div>
+      <div className="jobTrackerFileActions"><button className="fileDownloadBtn" type="button" onClick={()=>downloadFile(f.download_url,f.processed_name||f.name)} aria-label={`Download ${f.processed_name||f.name}`}><Download size={13}/></button>{/\.(stl|glb)$/i.test(f.name)&&<button className="fileRepairBtn" type="button" disabled={loading||repairable.has(f.status)} onClick={()=>setRepairTarget({jobId:j.id,file:f})}><Wrench size={13}/>{/\.glb$/i.test(f.name)?'Convert & Repair':'Repair STL'}</button>}</div>
      </div>):<small className="jobTrackerSub">No files attached</small>}
      <label className="fileUploadBtn"><Upload size={13}/>{files.length?'Add STL':'Upload STL'}<input type="file" accept=".stl" disabled={loading} onChange={e=>{void uploadFile(j.id,e.target.files?.[0]||null);e.currentTarget.value=''}}/></label></div></td>
      <td>{latest?<><b>{machine?.name||`Machine #${latest.machine_id||'—'}`}</b><small className="jobTrackerSub">{latest.status==='PRINTING'?'Printing now':`${pretty(latest.status)} · attempt ${latest.attempt_no}`}{latest.is_reshoot?' · reshoot':''}</small><small className="jobTrackerSub">{latest.good_qty} good / {latest.bad_qty} failed</small></>:<small className="jobTrackerSub">Not on a machine yet</small>}</td>
